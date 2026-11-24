@@ -538,7 +538,7 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Groq model", "Модель Groq"),
     ("Whisper Large V3", "Whisper Large V3"),
     ("Whisper Large V3 Turbo", "Whisper Large V3 Turbo"),
-    ("Uses Groq when a key is set; otherwise Hex uses the local model.", "Hex использует Groq, если задан ключ; иначе использует локальную модель."),
+    ("Dictation provider", "Поставщик диктовки"),
     ("Send", "Отправить"),
     ("Printed", "Выведено"),
     ("Raw", "Без обработки"),

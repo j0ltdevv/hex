@@ -13,7 +13,7 @@ use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use serde::{Deserialize, Serialize};
 
 use crate::dictation::vocabulary::{VocabularyEntry, serialize_saved};
-pub use crate::groq::{GroqApiKey, GroqModel};
+pub use crate::groq::{GroqApiKey, GroqModel, SpeechProvider};
 use crate::transcription::models::{TranscriptionModelId, TranscriptionSelection};
 
 #[cfg(hex_capture)]
@@ -337,6 +337,11 @@ pub struct AppSettings {
     pub transcription: TranscriptionSelection,
     /// Where the speech model runs (Linux and Windows).
     pub transcription_device: TranscriptionDevice,
+    /// Which speech path dictation uses. `Local` is the on-device base path;
+    /// `Groq` runs in the cloud and needs a key, falling back to `Local`
+    /// when none is configured.
+    #[serde(default)]
+    pub speech_provider: SpeechProvider,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub groq_api_key: Option<GroqApiKey>,
     #[serde(default)]
@@ -497,6 +502,7 @@ impl Default for AppSettings {
             show_dock_icon: true,
             transcription: default_transcription(),
             transcription_device: TranscriptionDevice::Auto,
+            speech_provider: SpeechProvider::Local,
             groq_api_key: None,
             groq_model: GroqModel::default(),
             transcription_recents: Vec::new(),
@@ -827,6 +833,11 @@ impl AppSettings {
         crate::feedback::set_volume(self.sound_effect_volume.clamp(0.0, 1.0));
         crate::feedback::set_sound_set(self.sound_theme);
         crate::desktop::i18n::apply(self.ui_language.as_deref());
+        crate::groq::set_runtime(
+            self.speech_provider,
+            self.groq_model,
+            self.groq_api_key.clone(),
+        );
         INDICATOR_POSITION.store(self.indicator_position as u8, Ordering::Relaxed);
         #[cfg(not(target_os = "macos"))]
         crate::transcription::local_transcriber::set_device(self.transcription_device);
@@ -1455,6 +1466,17 @@ pub fn exists() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn speech_provider_defaults_to_local_in_old_files() {
+        assert_eq!(
+            AppSettings::default().speech_provider,
+            SpeechProvider::Local
+        );
+        let old = serde_json::json!({ "sound_effects": false });
+        let loaded: AppSettings = serde_json::from_value(old).unwrap();
+        assert_eq!(loaded.speech_provider, SpeechProvider::Local);
+    }
 
     /// GNOME's window menu and KDE's KRunner take Alt+Space, so new setups
     /// there dictate with Ctrl+Alt+Space; it shares no key with Paste last or

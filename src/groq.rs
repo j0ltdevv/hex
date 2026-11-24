@@ -1,20 +1,52 @@
-//! Cloud dictation through Groq, with the local transcriber as the fallback.
-//! The API key is read from the environment or Hex's owner-only settings and
-//! is sent only in the request's Authorization header.
+//! Cloud dictation through Groq. The local transcriber remains Hex's default;
+//! this module only runs when the selected provider is Groq and a credential
+//! is available. Keys are sent in the Authorization header, never logged.
 
-use std::time::Duration;
+use std::fmt;
+use std::sync::{LazyLock, Mutex, MutexGuard, mpsc};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use transcribe_cpp::CancelToken;
+
+pub(crate) mod flac;
+pub(crate) mod keys;
+pub(crate) mod usage;
+
+#[allow(unused_imports)]
+pub(crate) use keys::{
+    KeyStatus, active_key, key_file_path, key_status, read_key_file, resolve_key, write_key_file,
+};
+pub(crate) use usage::{UsageOutcome, UsageRecord};
 
 const ENDPOINT: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
-const TIMEOUT: Duration = Duration::from_secs(15);
+const TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_AUDIO_BYTES: usize = 24 * 1024 * 1024;
 const MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
 const BOUNDARY: &str = "hex-groq-dictation";
+const CONTENT_TYPE: &str = "multipart/form-data; boundary=hex-groq-dictation";
 
-const MULTIPART_START: &[u8] =
-    b"--hex-groq-dictation\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n";
-const MULTIPART_MIDDLE: &[u8] = b"\r\n--hex-groq-dictation\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\njson\r\n--hex-groq-dictation\r\nContent-Disposition: form-data; name=\"temperature\"\r\n\r\n0\r\n--hex-groq-dictation\r\nContent-Disposition: form-data; name=\"file\"; filename=\"dictation.wav\"\r\nContent-Type: audio/wav\r\n\r\n";
-const MULTIPART_END: &[u8] = b"\r\n--hex-groq-dictation--\r\n";
+/// Which transcriber a dictation uses. Local is Hex's unchanged default.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeechProvider {
+    #[default]
+    Local,
+    Groq,
+}
+
+#[allow(dead_code)]
+impl SpeechProvider {
+    pub const ALL: [Self; 2] = [Self::Local, Self::Groq];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Groq => "groq",
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub enum GroqModel {
@@ -63,6 +95,167 @@ impl From<&str> for GroqApiKey {
     }
 }
 
+/// One cloud transcription request. `Debug` redacts the prompt and samples.
+#[derive(Clone, Copy)]
+pub(crate) struct GroqRequest<'a> {
+    pub(crate) samples: &'a [f32],
+    pub(crate) language: Option<&'a str>,
+    pub(crate) prompt: Option<&'a str>,
+    pub(crate) model: GroqModel,
+}
+
+#[allow(dead_code)]
+impl<'a> GroqRequest<'a> {
+    pub(crate) fn new(
+        samples: &'a [f32],
+        language: Option<&'a str>,
+        prompt: Option<&'a str>,
+        model: GroqModel,
+    ) -> Self {
+        Self {
+            samples,
+            language,
+            prompt,
+            model,
+        }
+    }
+
+    pub(crate) fn into_owned(self) -> OwnedGroqRequest {
+        OwnedGroqRequest {
+            samples: self.samples.to_vec(),
+            language: self.language.map(str::to_owned),
+            prompt: self.prompt.map(str::to_owned),
+            model: self.model,
+        }
+    }
+}
+
+impl fmt::Debug for GroqRequest<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GroqRequest")
+            .field("samples", &self.samples.len())
+            .field("language", &self.language.is_some())
+            .field("prompt", &self.prompt.is_some())
+            .field("model", &self.model)
+            .finish()
+    }
+}
+
+/// An owned request for the worker thread.
+#[derive(Clone)]
+pub(crate) struct OwnedGroqRequest {
+    pub(crate) samples: Vec<f32>,
+    pub(crate) language: Option<String>,
+    pub(crate) prompt: Option<String>,
+    pub(crate) model: GroqModel,
+}
+
+impl OwnedGroqRequest {
+    pub(crate) fn new(
+        samples: Vec<f32>,
+        language: Option<String>,
+        prompt: Option<String>,
+        model: GroqModel,
+    ) -> Self {
+        Self {
+            samples,
+            language,
+            prompt,
+            model,
+        }
+    }
+
+    pub(crate) fn borrowed(&self) -> GroqRequest<'_> {
+        GroqRequest {
+            samples: &self.samples,
+            language: self.language.as_deref(),
+            prompt: self.prompt.as_deref(),
+            model: self.model,
+        }
+    }
+}
+
+impl fmt::Debug for OwnedGroqRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.borrowed().fmt(formatter)
+    }
+}
+
+/// A clonable cancellation flag for a cloud request.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Cancellation {
+    token: CancelToken,
+}
+
+impl Cancellation {
+    #[allow(dead_code)]
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn from_token(token: CancelToken) -> Self {
+        Self { token }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn cancel(&self) {
+        self.token.cancel();
+    }
+
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.token.is_cancelled()
+    }
+}
+
+#[derive(Default)]
+struct Runtime {
+    initialized: bool,
+    provider: SpeechProvider,
+    model: GroqModel,
+    key: Option<GroqApiKey>,
+}
+
+static RUNTIME: LazyLock<Mutex<Runtime>> = LazyLock::new(|| Mutex::new(Runtime::default()));
+
+fn runtime_state() -> MutexGuard<'static, Runtime> {
+    RUNTIME.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+/// Called by `AppSettings::apply_runtime_values` with the live settings.
+pub(crate) fn set_runtime(provider: SpeechProvider, model: GroqModel, key: Option<GroqApiKey>) {
+    let mut state = runtime_state();
+    state.initialized = true;
+    state.provider = provider;
+    state.model = model;
+    state.key = key;
+}
+
+pub(crate) fn speech_provider() -> SpeechProvider {
+    runtime_state().provider
+}
+
+pub(crate) fn groq_model() -> GroqModel {
+    runtime_state().model
+}
+
+#[allow(dead_code)]
+pub(crate) fn groq_key() -> Option<GroqApiKey> {
+    active_key()
+}
+
+/// The legacy settings key, from the runtime projection when initialized.
+pub(crate) fn saved_key() -> Option<GroqApiKey> {
+    let state = runtime_state();
+    if state.initialized {
+        return state.key.clone();
+    }
+    drop(state);
+    crate::app_settings::AppSettings::read()
+        .ok()
+        .and_then(|settings| settings.groq_api_key)
+}
+
 /// Draft text for the Settings field, without exposing the stored key.
 pub(crate) fn draft_text(key: &Option<GroqApiKey>) -> String {
     key.as_ref()
@@ -80,8 +273,28 @@ pub(crate) fn draft_differs(key: &Option<GroqApiKey>, text: &str) -> bool {
 }
 
 /// Mono 16 kHz, 16-bit PCM for Groq. Non-finite samples become silence.
+fn pcm_i16(samples: &[f32]) -> Vec<i16> {
+    samples
+        .iter()
+        .map(|&sample| {
+            if sample.is_finite() {
+                let sample = sample.clamp(-1.0, 1.0);
+                let scale = if sample.is_sign_negative() {
+                    32768.0
+                } else {
+                    32767.0
+                };
+                (sample * scale) as i16
+            } else {
+                0
+            }
+        })
+        .collect()
+}
+
 pub(crate) fn wav(samples: &[f32]) -> Vec<u8> {
-    let data_len = samples
+    let pcm = pcm_i16(samples);
+    let data_len = pcm
         .len()
         .checked_mul(2)
         .expect("dictation is too large for a WAV");
@@ -113,24 +326,14 @@ pub(crate) fn wav(samples: &[f32]) -> Vec<u8> {
 
     let mut bytes = Vec::with_capacity(header.len() + data_len);
     bytes.extend_from_slice(&header);
-    for &sample in samples {
-        let sample = if sample.is_finite() {
-            let sample = sample.clamp(-1.0, 1.0);
-            let scale = if sample.is_sign_negative() {
-                32768.0
-            } else {
-                32767.0
-            };
-            (sample * scale) as i16
-        } else {
-            0
-        };
+    for sample in pcm {
         bytes.extend_from_slice(&sample.to_le_bytes());
     }
     bytes
 }
 
 /// Prefer a nonempty environment key to a nonempty saved key.
+#[allow(dead_code)]
 pub(crate) fn key_from(env: Option<&str>, saved: Option<&str>) -> Option<String> {
     env.into_iter()
         .chain(saved)
@@ -140,6 +343,7 @@ pub(crate) fn key_from(env: Option<&str>, saved: Option<&str>) -> Option<String>
 }
 
 /// Use Groq's nonempty text, otherwise run the caller's unchanged local path.
+#[allow(dead_code)]
 pub(crate) fn prefer_groq(
     groq: Result<String, String>,
     local: impl FnOnce() -> Result<String, String>,
@@ -159,63 +363,113 @@ pub(crate) fn prefer_groq(
     }
 }
 
-#[cfg(test)]
-pub(crate) fn transcribe_with(
+#[allow(dead_code)]
+pub(crate) fn provider_from(settings: &crate::app_settings::AppSettings) -> SpeechProvider {
+    settings.speech_provider
+}
+
+#[derive(Clone, Copy)]
+enum AudioFormat {
+    Flac,
+    Wav,
+}
+
+/// FLAC first, WAV only when the server rejects FLAC itself.
+pub(crate) fn transcribe_with_retry(
     agent: &ureq::Agent,
     endpoint: &str,
-    key: &str,
-    model: GroqModel,
-    samples: &[f32],
+    key: &GroqApiKey,
+    request: GroqRequest<'_>,
+    cancel: &Cancellation,
 ) -> Result<String, String> {
-    request(agent, endpoint, key, model, samples).map_err(|failure| failure.message())
-}
-
-/// Cloud-first dictation when a key is configured. Every failure is an error
-/// so the caller can execute its existing local transcription path.
-pub(crate) fn transcribe_if_configured(samples: &[f32]) -> Result<String, String> {
-    let settings = crate::app_settings::AppSettings::read().unwrap_or_default();
-    let env = std::env::var("GROQ_API_KEY").ok();
-    let saved = settings.groq_api_key.as_ref().map(GroqApiKey::as_str);
-    let Some(key) = key_from(env.as_deref(), saved) else {
-        return Err("Groq is not configured".into());
+    let started = Instant::now();
+    let model = request.model;
+    let samples = request.samples.len();
+    let finish = |result: Result<String, String>, outcome: UsageOutcome| {
+        usage::record(UsageRecord {
+            at_unix_secs: usage::now_unix_secs(),
+            provider: SpeechProvider::Groq,
+            model,
+            outcome,
+            samples,
+            duration_ms: started.elapsed().as_millis() as u64,
+        });
+        result
     };
-    let agent = crate::net::agent(ENDPOINT, |config| {
-        config
-            .https_only(true)
-            .max_redirects(0)
-            .http_status_as_error(false)
-            .timeout_global(Some(TIMEOUT))
-    });
-    request(&agent, ENDPOINT, &key, settings.groq_model, samples).map_err(|failure| {
-        tracing::warn!(
-            target: "hex_config",
-            host = crate::net::host(ENDPOINT),
-            reason = failure.reason.as_str(),
-            error_class = failure.class,
-            "Groq transcription failed"
-        );
-        failure.message()
-    })
+
+    if cancel.is_cancelled() {
+        return finish(Err(cancelled_message()), UsageOutcome::Failed);
+    }
+    if let Err(failure) = preflight(request.samples) {
+        return finish(Err(failure.message()), UsageOutcome::Failed);
+    }
+
+    let mut retried = false;
+    let result = match transcribe_once(agent, endpoint, key, request, AudioFormat::Flac, cancel) {
+        Ok(text) => Ok(text),
+        Err(failure) if failure.retryable() => {
+            if cancel.is_cancelled() {
+                Err(cancelled_message())
+            } else {
+                retried = true;
+                transcribe_once(agent, endpoint, key, request, AudioFormat::Wav, cancel)
+                    .map_err(|failure| failure.message())
+            }
+        }
+        Err(failure) => Err(failure.message()),
+    };
+    let outcome = match (&result, retried) {
+        (Ok(_), true) => UsageOutcome::WavRetry,
+        (Ok(_), false) => UsageOutcome::Succeeded,
+        (Err(_), _) => UsageOutcome::Failed,
+    };
+    finish(result, outcome)
 }
 
-fn request(
+fn preflight(samples: &[f32]) -> Result<(), Failure> {
+    if samples.len() > MAX_AUDIO_BYTES / 2 {
+        Err(Failure::new("audio", "the recording exceeded 24 MiB"))
+    } else {
+        Ok(())
+    }
+}
+
+fn transcribe_once(
     agent: &ureq::Agent,
     endpoint: &str,
-    key: &str,
-    model: GroqModel,
-    samples: &[f32],
+    key: &GroqApiKey,
+    request: GroqRequest<'_>,
+    format: AudioFormat,
+    cancel: &Cancellation,
 ) -> Result<String, Failure> {
-    let key = key.trim();
+    if cancel.is_cancelled() {
+        return Err(Failure::new("cancelled", "the transcription was cancelled"));
+    }
+    let key = key.as_str().trim();
     if key.is_empty() {
         return Err(Failure::new("configuration", "the API key is empty"));
     }
-    let wav = wav(samples);
-    let body = multipart(model.as_str(), &wav);
+
+    let audio = match format {
+        AudioFormat::Flac => flac::encode(request.samples),
+        AudioFormat::Wav => wav(request.samples),
+    };
+    if audio.len() > MAX_AUDIO_BYTES {
+        return Err(Failure::new("audio", "the encoded audio exceeded 24 MiB"));
+    }
+    let body = multipart(
+        request.model,
+        request.language,
+        request.prompt,
+        format,
+        &audio,
+    );
+
     let mut response = agent
         .post(endpoint)
         .header("Authorization", format!("Bearer {key}"))
         .header("Accept", "application/json")
-        .content_type(format!("multipart/form-data; boundary={BOUNDARY}"))
+        .content_type(CONTENT_TYPE)
         .config()
         .timeout_global(Some(TIMEOUT))
         .max_redirects(0)
@@ -223,12 +477,13 @@ fn request(
         .build()
         .send(&body)
         .map_err(|error| Failure::request(endpoint, error))?;
+
+    if cancel.is_cancelled() {
+        return Err(Failure::new("cancelled", "the transcription was cancelled"));
+    }
     let status = response.status().as_u16();
     if status != 200 {
-        return Err(Failure::new(
-            "http",
-            format!("the server answered HTTP {status}"),
-        ));
+        return Err(Failure::http(status));
     }
     let bytes = response
         .body_mut()
@@ -239,37 +494,238 @@ fn request(
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
         return Err(Failure::new("response", "the response exceeded 1 MiB"));
     }
+
     #[derive(Deserialize)]
     struct Transcript {
         text: String,
     }
     let transcript: Transcript = serde_json::from_slice(&bytes)
         .map_err(|_| Failure::new("response", "the response was not transcription JSON"))?;
-    if transcript.text.trim().is_empty() {
+    if cancel.is_cancelled() {
+        return Err(Failure::new("cancelled", "the transcription was cancelled"));
+    }
+    let trimmed = transcript.text.trim();
+    if trimmed.is_empty() {
         return Err(Failure::new("empty", "the transcript was empty"));
     }
-    Ok(transcript.text)
+    if trimmed.len() == transcript.text.len() {
+        Ok(transcript.text)
+    } else {
+        Ok(trimmed.to_owned())
+    }
 }
 
-fn multipart(model: &str, wav: &[u8]) -> Vec<u8> {
+fn multipart(
+    model: GroqModel,
+    language: Option<&str>,
+    prompt: Option<&str>,
+    format: AudioFormat,
+    audio: &[u8],
+) -> Vec<u8> {
+    let (filename, content_type) = match format {
+        AudioFormat::Flac => ("dictation.flac", "audio/flac"),
+        AudioFormat::Wav => ("dictation.wav", "audio/wav"),
+    };
     let mut body = Vec::with_capacity(
-        MULTIPART_START.len()
-            + model.len()
-            + MULTIPART_MIDDLE.len()
-            + wav.len()
-            + MULTIPART_END.len(),
+        256 + model.as_str().len()
+            + audio.len()
+            + language.map_or(0, str::len)
+            + prompt.map_or(0, str::len),
     );
-    body.extend_from_slice(MULTIPART_START);
-    body.extend_from_slice(model.as_bytes());
-    body.extend_from_slice(MULTIPART_MIDDLE);
-    body.extend_from_slice(wav);
-    body.extend_from_slice(MULTIPART_END);
+    push_text_field(&mut body, "model", model.as_str());
+    push_text_field(&mut body, "response_format", "json");
+    push_text_field(&mut body, "temperature", "0");
+    if let Some(language) = language.filter(|value| !value.is_empty()) {
+        push_text_field(&mut body, "language", language);
+    }
+    if let Some(prompt) = prompt.filter(|value| !value.is_empty()) {
+        push_text_field(&mut body, "prompt", prompt);
+    }
+    body.extend_from_slice(b"--");
+    body.extend_from_slice(BOUNDARY.as_bytes());
+    body.extend_from_slice(b"\r\nContent-Disposition: form-data; name=\"file\"; filename=\"");
+    body.extend_from_slice(filename.as_bytes());
+    body.extend_from_slice(b"\"\r\nContent-Type: ");
+    body.extend_from_slice(content_type.as_bytes());
+    body.extend_from_slice(b"\r\n\r\n");
+    body.extend_from_slice(audio);
+    body.extend_from_slice(b"\r\n--");
+    body.extend_from_slice(BOUNDARY.as_bytes());
+    body.extend_from_slice(b"--\r\n");
     body
+}
+
+fn push_text_field(body: &mut Vec<u8>, name: &str, value: &str) {
+    body.extend_from_slice(b"--");
+    body.extend_from_slice(BOUNDARY.as_bytes());
+    body.extend_from_slice(b"\r\nContent-Disposition: form-data; name=\"");
+    body.extend_from_slice(name.as_bytes());
+    body.extend_from_slice(b"\"\r\n\r\n");
+    body.extend_from_slice(value.as_bytes());
+    body.extend_from_slice(b"\r\n");
+}
+
+fn production_agent() -> ureq::Agent {
+    crate::net::agent(ENDPOINT, |config| {
+        config
+            .https_only(true)
+            .max_redirects(0)
+            .http_status_as_error(false)
+            .timeout_global(Some(TIMEOUT))
+    })
+}
+
+/// Runs one cloud transcription on a worker thread and reports one result.
+pub(crate) fn spawn(
+    request: OwnedGroqRequest,
+    cancel: CancelToken,
+) -> mpsc::Receiver<Result<String, String>> {
+    let (sender, receiver) = mpsc::channel();
+    let thread_sender = sender.clone();
+    let started = thread::Builder::new()
+        .name("hex-groq".into())
+        .spawn(move || {
+            let cancellation = Cancellation::from_token(cancel);
+            let result = if cancellation.is_cancelled() {
+                Err(cancelled_message())
+            } else {
+                match active_key() {
+                    Some(key) => transcribe_with_retry(
+                        &production_agent(),
+                        ENDPOINT,
+                        &key,
+                        request.borrowed(),
+                        &cancellation,
+                    ),
+                    None => Err("Groq is not configured".into()),
+                }
+            };
+            if let Err(error) = &result {
+                tracing::warn!(
+                    target: "hex_config",
+                    host = crate::net::host(ENDPOINT),
+                    %error,
+                    "Groq transcription failed"
+                );
+            }
+            let _ = thread_sender.send(result);
+        });
+    if let Err(error) = started {
+        let _ = sender.send(Err(format!("Groq transcription failed (thread): {error}")));
+    }
+    receiver
+}
+
+/// One in-flight cloud result beside a local transcript. The caller waits for
+/// it in job order, so a slow request never overtakes a later paste.
+pub(crate) struct PendingGroq {
+    reply: mpsc::Receiver<Result<String, String>>,
+    cancel: CancelToken,
+}
+
+impl PendingGroq {
+    pub(crate) fn start(request: Option<OwnedGroqRequest>, cancel: CancelToken) -> Option<Self> {
+        request.map(|request| Self {
+            reply: spawn(request, cancel.clone()),
+            cancel,
+        })
+    }
+
+    /// Returns cloud text only when accepted; any error, empty result,
+    /// disconnect, or cancellation keeps the local transcript.
+    pub(crate) fn settle(
+        self,
+        local_text: &str,
+        accept: impl FnOnce(String) -> Result<String, String>,
+    ) -> String {
+        if self.cancel.is_cancelled() {
+            return local_text.to_owned();
+        }
+        loop {
+            match self.reply.recv_timeout(Duration::from_millis(100)) {
+                Ok(Ok(text)) => return accept(text).unwrap_or_else(|_| local_text.to_owned()),
+                Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return local_text.to_owned();
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) if self.cancel.is_cancelled() => {
+                    return local_text.to_owned();
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+        }
+    }
+}
+
+/// Settles an optional cloud job, leaving the local text untouched when no
+/// request was started.
+pub(crate) fn settle_option(
+    pending: Option<PendingGroq>,
+    local_text: &str,
+    accept: impl FnOnce(String) -> Result<String, String>,
+) -> String {
+    pending.map_or_else(
+        || local_text.to_owned(),
+        |pending| pending.settle(local_text, accept),
+    )
+}
+
+/// Compatibility path for callers not yet routed through `spawn`.
+#[allow(dead_code)]
+pub(crate) fn transcribe_if_configured(samples: &[f32]) -> Result<String, String> {
+    let settings = crate::app_settings::AppSettings::read().unwrap_or_default();
+    if provider_from(&settings) != SpeechProvider::Groq {
+        return Err("Groq is not selected".into());
+    }
+    let Some(key) = active_key() else {
+        return Err("Groq is not configured".into());
+    };
+    let result = transcribe_with_retry(
+        &production_agent(),
+        ENDPOINT,
+        &key,
+        GroqRequest::new(samples, None, None, settings.groq_model),
+        &Cancellation::new(),
+    );
+    if let Err(error) = &result {
+        tracing::warn!(
+            target: "hex_config",
+            host = crate::net::host(ENDPOINT),
+            %error,
+            "Groq transcription failed"
+        );
+    }
+    result
+}
+
+#[cfg(test)]
+pub(crate) fn transcribe_with(
+    agent: &ureq::Agent,
+    endpoint: &str,
+    key: &str,
+    model: GroqModel,
+    samples: &[f32],
+) -> Result<String, String> {
+    let key = GroqApiKey::from(key);
+    let request = GroqRequest::new(samples, None, None, model);
+    transcribe_once(
+        agent,
+        endpoint,
+        &key,
+        request,
+        AudioFormat::Wav,
+        &Cancellation::new(),
+    )
+    .map_err(|failure| failure.message())
+}
+
+fn cancelled_message() -> String {
+    "Groq transcription was cancelled".into()
 }
 
 struct Failure {
     class: &'static str,
     reason: String,
+    status: Option<u16>,
 }
 
 impl Failure {
@@ -277,7 +733,20 @@ impl Failure {
         Self {
             class,
             reason: reason.into(),
+            status: None,
         }
+    }
+
+    fn http(status: u16) -> Self {
+        Self {
+            class: "http",
+            reason: format!("the server answered HTTP {status}"),
+            status: Some(status),
+        }
+    }
+
+    fn retryable(&self) -> bool {
+        matches!(self.status, Some(400 | 415 | 422))
     }
 
     fn request(endpoint: &str, error: ureq::Error) -> Self {
@@ -289,7 +758,14 @@ impl Failure {
             ureq::Error::StatusCode(status) => format!("the server answered HTTP {status}"),
             _ => crate::net::unreachable(endpoint, &error),
         };
-        Self::new("transport", reason)
+        Self {
+            class: "transport",
+            reason,
+            status: match error {
+                ureq::Error::StatusCode(status) => Some(status),
+                _ => None,
+            },
+        }
     }
 
     fn message(&self) -> String {

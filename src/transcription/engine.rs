@@ -366,6 +366,13 @@ pub struct Transcribed {
     pub source: Source,
     /// Time from the finish request to the final text.
     pub finish_ms: u64,
+    pub(crate) closing_mark_required: bool,
+}
+
+impl Transcribed {
+    pub(crate) fn accept_cloud_text(&self, text: String) -> Result<String, String> {
+        check_closing_mark(text, self.closing_mark_required)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -513,6 +520,10 @@ pub struct PendingTranscript {
 }
 
 impl PendingTranscript {
+    pub(crate) fn cancel_token(&self) -> CancelToken {
+        self.cancel.clone()
+    }
+
     pub fn wait(self) -> Result<Transcribed, String> {
         let mut stream_deadline = self
             .stream_cancel
@@ -753,16 +764,12 @@ impl TranscriptionEngine {
             stream,
             clip,
             Box::new(|model, clip| {
-                crate::groq::prefer_groq(crate::groq::transcribe_if_configured(&clip), || {
-                    // Labs › Skip long pauses, asked as the run starts, then
-                    // padding that follows the cut rather than being trimmed by
-                    // a trailing pause (#1629).
-                    let clip =
-                        padded_whole_clip(clip, crate::labs::skip_pauses(), Some(model.model_id()));
-                    model
-                        .transcribe(&clip)
-                        .map_err(|error| format!("{error:#}"))
-                })
+                // Labs skip-pauses, then padding after the cut (#1629).
+                let clip =
+                    padded_whole_clip(clip, crate::labs::skip_pauses(), Some(model.model_id()));
+                model
+                    .transcribe(&clip)
+                    .map_err(|error| format!("{error:#}"))
             }),
         )
     }
@@ -1437,20 +1444,12 @@ impl Worker {
                     "finished live stream"
                 );
                 let result = result.and_then(|text| check_closing_mark(text, closing_mark));
-                // Try Groq before accepting a successful local stream; keep
-                // stream text when no key exists, the request fails, or cancel.
-                let result = match result {
-                    Ok(text) if !job.cancel.is_cancelled() => crate::groq::prefer_groq(
-                        crate::groq::transcribe_if_configured(&clip),
-                        || Ok(text),
-                    ),
-                    other => other,
-                };
                 match result {
                     Ok(text) => job.finish(Ok(Transcribed {
                         text,
                         source: Source::Stream,
                         finish_ms: started.elapsed().as_millis() as u64,
+                        closing_mark_required: closing_mark,
                     })),
                     Err(_) if job.cancel.is_cancelled() => {
                         job.finish(Err("transcription was abandoned".into()));
@@ -1532,6 +1531,7 @@ impl Worker {
             text: text.trim().to_string(),
             source,
             finish_ms: started.elapsed().as_millis() as u64,
+            closing_mark_required: false,
         });
         // An offline run may switch the model (macOS activates a selection).
         self.publish_slot();
@@ -1671,6 +1671,7 @@ mod tests {
             text: "streamed 8".into(),
             source: Source::Stream,
             finish_ms: 0,
+            closing_mark_required: false,
         }));
         assert_eq!(dictation.wait().unwrap().source, Source::Stream);
         // The chunk waits to run after the stream.
@@ -2881,6 +2882,7 @@ mod tests {
                 text: "late but fine".into(),
                 source: Source::Offline,
                 finish_ms: 0,
+                closing_mark_required: false,
             }));
         });
         assert_eq!(pending.wait().unwrap().text, "late but fine");

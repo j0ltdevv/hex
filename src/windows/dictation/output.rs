@@ -84,14 +84,18 @@ pub(super) fn process_dictation_job(
     let started = Instant::now();
     let target = OutputTarget::from_flavour(job.flavour, job.print.is_some());
     let inference_started = Instant::now();
+    let groq = job.groq.take();
     let transcription = job.transcript.wait().map(|transcribed| {
+        let text = crate::groq::settle_option(groq, &transcribed.text, |text| {
+            transcribed.accept_cloud_text(text)
+        });
         tracing::info!(
             source = transcribed.source.label(),
             finish_ms = transcribed.finish_ms,
             audio_ms = job.audio_ms,
             "transcribed Windows dictation"
         );
-        transcribed.text
+        text
     });
     let inference_ms = inference_started.elapsed().as_millis() as u64;
     let context = job.context.finish();

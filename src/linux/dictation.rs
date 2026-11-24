@@ -20,6 +20,7 @@ use crate::dictation::paste_last::LastDictation;
 use crate::dictation::service::{DictationQueue, Effect, MICROPHONE_LOST, ServiceDictations};
 use crate::dictation::{DictationCapture, Finish, POST_RELEASE_TAIL, ReleaseWait};
 use crate::feedback::{self, Tone};
+use crate::groq::PendingGroq;
 use crate::linux::input::{
     CommandQueue, HotkeyEvent, HotkeyOptions, HotkeyStatus, LinuxHotkey, LinuxHotkeyMonitor,
 };
@@ -44,6 +45,9 @@ use typing::CaptureTyping;
 
 struct Job {
     transcript: PendingTranscript,
+    /// Cloud result started beside this job when Groq is selected. None on
+    /// the default Local path.
+    groq: Option<PendingGroq>,
     context: crate::linux::context::PendingContext,
     audio_ms: u64,
     /// The language the model was asked for at submission.
@@ -304,6 +308,9 @@ pub(crate) fn run(
             let mut stop_phrase_only = false;
             let result = (|| -> Result<String> {
                 let transcribed = job.transcript.wait().map_err(|error| eyre!(error))?;
+                let text = crate::groq::settle_option(job.groq.take(), &transcribed.text, |text| {
+                    transcribed.accept_cloud_text(text)
+                });
                 let inference_ms = started.elapsed().as_millis() as u64;
                 tracing::info!(
                     source = transcribed.source.label(),
@@ -316,11 +323,7 @@ pub(crate) fn run(
                     PreparedTranscript, prepare_transcript,
                 };
                 let target = OutputTarget::from_flavour(job.flavour, kind == OutputKind::Printed);
-                let text = match prepare_transcript(
-                    transcribed.text,
-                    job.stop_phrase.as_deref(),
-                    target,
-                ) {
+                let text = match prepare_transcript(text, job.stop_phrase.as_deref(), target) {
                     PreparedTranscript::StopPhraseOnly => {
                         if let Some(session) = job.typing.take() {
                             session.cancel();
@@ -1412,13 +1415,28 @@ fn submit_capture(
             let audio_ms = clip.duration_ms();
             let stream = clip.take_stream();
             let samples = clip.into_transcription_samples();
+            let recording = crate::history::Recording::keep(&samples);
             let language = engine
                 .held_selection()
                 .unwrap_or_else(|| crate::app_settings::transcription_selection().1)
                 .language;
-            let recording = crate::history::Recording::keep(&samples);
+            let groq_request =
+                (crate::groq::speech_provider() == crate::groq::SpeechProvider::Groq).then(|| {
+                    let prompt = crate::dictation::vocabulary::for_dictation(|| {
+                        crate::dictation::vocabulary::transcription_prompt(500)
+                    });
+                    crate::groq::OwnedGroqRequest::new(
+                        samples.clone(),
+                        Some(language.clone()),
+                        prompt,
+                        crate::groq::groq_model(),
+                    )
+                });
+            let transcript = engine.finish(stream, samples)?;
+            let groq = PendingGroq::start(groq_request, transcript.cancel_token());
             let job = OutputJob::Dictation(Box::new(Job {
-                transcript: engine.finish(stream, samples)?,
+                transcript,
+                groq,
                 context,
                 audio_ms,
                 language,

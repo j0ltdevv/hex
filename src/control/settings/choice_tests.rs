@@ -13,6 +13,7 @@ use crate::app_settings::{
     RecordingAudioBehavior, RecordingQuality, SCREENSHOT_FRAME_RATES, TranscriptionDevice,
     UNLOAD_IDLE_MINUTES, UpdateChannel,
 };
+use crate::groq::SpeechProvider;
 
 fn test_rules() -> ShortcutRules {
     ShortcutRules {
@@ -140,6 +141,7 @@ fn every_choice_key_matches_its_enum_serde_names() {
                 .collect(),
             "transcription_device" => serde_names(&TranscriptionDevice::ALL),
             "groq_model" => serde_names(&[GroqModel::LargeV3, GroqModel::Turbo]),
+            "speech_provider" => serde_names(&SpeechProvider::ALL),
             "indicator_position" => serde_names(&IndicatorPosition::ALL),
             "updates.channel" => serde_names(&UpdateChannel::ALL),
             #[cfg(hex_capture)]

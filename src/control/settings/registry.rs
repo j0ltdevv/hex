@@ -1007,6 +1007,11 @@ pub(super) const KEYS: &[Key] = &[
         Kind::Choice(&["auto", "gpu", "cpu"]),
         "Where the speech model runs: auto (a GPU unless it failed before), gpu, or cpu (Linux and Windows)",
     ),
+    key(
+        "speech_provider",
+        Kind::Choice(&["local", "groq"]),
+        "Dictation provider: local runs Hex's on-device model only; groq uses the cloud and needs a key",
+    ),
     read_only_optional(
         "groq_api_key",
         Kind::Text,
