@@ -218,13 +218,24 @@ fn value_of(key: &Key, json: &Value) -> SettingValue {
         .pointer(&pointer(key.key))
         .cloned()
         .unwrap_or(Value::Null);
-    let value = match key.kind {
-        Kind::Shortcut(_) => match serde_json::from_value::<Option<HotkeyBinding>>(raw) {
-            Ok(Some(binding)) => Value::String(format_hotkey(&binding)),
-            _ => Value::Null,
-        },
-        Kind::NumberChoice(_) => Value::String(raw.to_string()),
-        _ => raw,
+    let value = if key.key == "groq_api_key" {
+        Value::String(
+            if raw.as_str().is_some_and(|key| !key.is_empty()) {
+                "[configured]"
+            } else {
+                ""
+            }
+            .into(),
+        )
+    } else {
+        match key.kind {
+            Kind::Shortcut(_) => match serde_json::from_value::<Option<HotkeyBinding>>(raw) {
+                Ok(Some(binding)) => Value::String(format_hotkey(&binding)),
+                _ => Value::Null,
+            },
+            Kind::NumberChoice(_) => Value::String(raw.to_string()),
+            _ => raw,
+        }
     };
     SettingValue {
         key: key.key.into(),
@@ -795,6 +806,7 @@ mod tests {
                 opencode_model: Some("anthropic/claude-haiku".into()),
                 ..Default::default()
             },
+            groq_api_key: Some("gsk_test_not_a_real_key".into()),
             ..Default::default()
         };
         let json = serde_json::to_value(settings).unwrap();
@@ -1283,6 +1295,30 @@ mod tests {
         let retention = get(&settings, "history_retention").unwrap();
         assert_eq!(retention[0].value, Value::String("week".into()));
         assert_eq!(retention[0].choices.len(), 5);
+    }
+
+    #[test]
+    fn cli_output_redacts_the_groq_api_key() {
+        let secret = "gsk_cli_redaction_test_not_a_real_key";
+        let settings = AppSettings {
+            groq_api_key: Some(secret.into()),
+            ..AppSettings::default()
+        };
+        let got = get(&settings, "groq_api_key").unwrap();
+        assert_eq!(got[0].value, Value::String("[configured]".into()));
+        assert!(!got[0].writable);
+        for shown in [got, list(&settings)] {
+            let output = serde_json::to_string(&shown).unwrap();
+            assert!(!output.contains(secret), "{output}");
+            assert!(output.contains("[configured]"), "{output}");
+        }
+
+        let unset = get(&AppSettings::default(), "groq_api_key").unwrap();
+        assert_eq!(unset[0].value, Value::String(String::new()));
+        let error = apply(&settings, "groq_api_key", secret, &rules()).unwrap_err();
+        assert_eq!(error.code, "read-only");
+        assert!(error.message.contains("Settings or GROQ_API_KEY"));
+        assert!(!error.message.contains(secret));
     }
 
     #[test]

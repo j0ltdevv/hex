@@ -8,8 +8,8 @@ use serde_json::Value;
 use super::{Kind, ShortcutRules, apply, get, keys};
 use crate::app_settings::{
     AppSettings, AppearanceTheme, CALENDAR_LEAD_MINUTES, CapsLockLight, DictationStyle, ExportSize,
-    HotkeyKey, HotkeySlot, IndicatorPosition, KEEP_MICROPHONE_OPEN_SECONDS, MaxResolution,
-    MeetingIndicatorCorner, MeetingPolicy, MeetingRetention, MeetingSummaries,
+    GroqModel, HotkeyKey, HotkeySlot, IndicatorPosition, KEEP_MICROPHONE_OPEN_SECONDS,
+    MaxResolution, MeetingIndicatorCorner, MeetingPolicy, MeetingRetention, MeetingSummaries,
     RecordingAudioBehavior, RecordingQuality, SCREENSHOT_FRAME_RATES, TranscriptionDevice,
     UNLOAD_IDLE_MINUTES, UpdateChannel,
 };
@@ -139,6 +139,7 @@ fn every_choice_key_matches_its_enum_serde_names() {
                 .filter_map(|(code, _)| code.map(str::to_owned))
                 .collect(),
             "transcription_device" => serde_names(&TranscriptionDevice::ALL),
+            "groq_model" => serde_names(&[GroqModel::LargeV3, GroqModel::Turbo]),
             "indicator_position" => serde_names(&IndicatorPosition::ALL),
             "updates.channel" => serde_names(&UpdateChannel::ALL),
             #[cfg(hex_capture)]

@@ -79,6 +79,21 @@ const fn read_only(key: &'static str, kind: Kind, about: &'static str, why: &'st
     }
 }
 
+const fn read_only_optional(
+    key: &'static str,
+    kind: Kind,
+    about: &'static str,
+    why: &'static str,
+) -> Key {
+    Key {
+        key,
+        kind,
+        optional: true,
+        read_only: Some(why),
+        about,
+    }
+}
+
 const UNIT: Kind = Kind::Number { min: 0.0, max: 1.0 };
 const MODEL_CHANGE: &str = "change the transcription model with `hex model use`";
 
@@ -991,6 +1006,17 @@ pub(super) const KEYS: &[Key] = &[
         "transcription_device",
         Kind::Choice(&["auto", "gpu", "cpu"]),
         "Where the speech model runs: auto (a GPU unless it failed before), gpu, or cpu (Linux and Windows)",
+    ),
+    read_only_optional(
+        "groq_api_key",
+        Kind::Text,
+        "Groq API key used for cloud dictation; never shown by the CLI",
+        "set it in Settings or GROQ_API_KEY",
+    ),
+    key(
+        "groq_model",
+        Kind::Choice(&["whisper-large-v3", "whisper-large-v3-turbo"]),
+        "Groq cloud transcription model; whisper-large-v3 is the default",
     ),
     key(
         "indicator_position",

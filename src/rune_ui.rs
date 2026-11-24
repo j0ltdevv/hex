@@ -689,6 +689,7 @@ pub(crate) struct Ui {
     /// When a text field last changed without being saved.
     draft_since: Option<Instant>,
     duck_volume_drag: Option<f32>,
+    groq_api_key: TextEdit,
     models: models::Models,
     history: history::HistoryPane,
     /// Labs › Transcribe dropped audio: the drop target, its queue, and the
@@ -736,6 +737,7 @@ pub(crate) struct Ui {
 struct Drafts {
     modes: bool,
     vocabulary: bool,
+    groq_api_key: bool,
     labs: labs::LabDrafts,
 }
 
@@ -797,6 +799,7 @@ impl Ui {
     fn with(settings: AppSettings, service: Service) -> Self {
         let modes = modes::ModesPane::new(&settings);
         let vocabulary = vocabulary::VocabularyEditor::new(&settings.vocabulary);
+        let groq_api_key = general::groq::draft(&settings.groq_api_key);
         Self {
             settings,
             #[cfg(test)]
@@ -828,6 +831,7 @@ impl Ui {
             vocabulary,
             preparing: None,
             draft_since: None,
+            groq_api_key,
             duck_volume_drag: None,
             models: models::Models::default(),
             history: history::HistoryPane::default(),
@@ -918,6 +922,7 @@ impl Ui {
             self.vocabulary.reload(&candidate.vocabulary);
         }
         self.lab_store.rebase_labs(&submitted.labs, &candidate.labs);
+        general::groq::set_draft(self, &candidate.groq_api_key);
         self.settings = candidate;
         self.modes.committed(&self.settings);
         self.draft_since = None;
@@ -936,6 +941,7 @@ impl Ui {
     /// The settings with every text field's current text applied.
     fn drafted(&self) -> AppSettings {
         let mut candidate = self.settings.clone();
+        general::groq::project(self, &mut candidate);
         self.modes.project(&mut candidate);
         candidate.vocabulary = self.vocabulary.project();
         self.lab_store.project(&mut candidate);
@@ -950,6 +956,7 @@ impl Ui {
         Drafts {
             modes: modes.dictation_processing != settings.dictation_processing,
             vocabulary: self.vocabulary.project() != settings.vocabulary,
+            groq_api_key: general::groq::differs(self, &settings.groq_api_key),
             labs: self.lab_store.drafts(settings),
         }
     }
@@ -1134,6 +1141,9 @@ impl Ui {
             }
             if !drafts.vocabulary && service.vocabulary != self.settings.vocabulary {
                 self.vocabulary.reload(&service.vocabulary);
+            }
+            if !drafts.groq_api_key && service.groq_api_key != self.settings.groq_api_key {
+                general::groq::set_draft(self, &service.groq_api_key);
             }
             // A lab field follows its lab and its saved text: only a saved
             // text that actually changed may reset the field, so any other

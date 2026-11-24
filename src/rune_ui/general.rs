@@ -29,6 +29,7 @@ use crate::desktop::login_item::LoginItemStatus;
 use crate::desktop::onboarding::PermissionKind;
 use crate::transcription::models as transcription_models;
 
+pub(super) mod groq;
 mod page;
 mod shortcuts;
 
@@ -795,6 +796,7 @@ pub(super) fn dictation(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<CardRow> 
     if ui.platform.caps.os != super::platform::Os::Macos {
         rows.push(speech_engine_row(ui, p, layer));
     }
+    rows.extend(groq::rows(ui, p, layer));
     rows
 }
 

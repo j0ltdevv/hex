@@ -456,13 +456,15 @@ impl DictationWorker {
         let prepare_ms = submitted_at.elapsed().as_millis();
         let offline = Box::new(move |model: &mut WarmTranscriber, samples: Vec<f32>| {
             let _busy = DictationInference::begin();
-            let transcriber = model
-                .activate(&selection)
-                .map_err(|error| error.to_string())?;
-            crate::dictation::vocabulary::for_capture(&screen_terms, || {
-                transcriber.transcribe(samples)
+            crate::groq::prefer_groq(crate::groq::transcribe_if_configured(&samples), || {
+                let transcriber = model
+                    .activate(&selection)
+                    .map_err(|error| error.to_string())?;
+                crate::dictation::vocabulary::for_capture(&screen_terms, || {
+                    transcriber.transcribe(samples)
+                })
+                .map_err(|error| error.to_string())
             })
-            .map_err(|error| error.to_string())
         });
         let transcript = engine
             .finish_with(stream, samples, offline)
