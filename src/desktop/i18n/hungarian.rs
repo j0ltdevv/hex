@@ -1480,6 +1480,10 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Stop every call recording when the call ends", "Minden hívásfelvétel leállítása a hívás végén"),
     ("Also stop an offered, calendar, or by-hand call recording 30 s after its call app leaves the microphone, even with Stop when the call ends off", "A felajánlott, naptárból indított vagy kézzel indított hívásfelvételt is leállítja 30 s-mal azután, hogy a hívóalkalmazás elengedi a mikrofont, akkor is, ha a „Leállítás a hívás végén” ki van kapcsolva"),
     ("Also stop an offered or by-hand call recording 30 s after its call app leaves the microphone, even with Stop when the call ends off", "A felajánlott vagy kézzel indított hívásfelvételt is leállítja 30 s-mal azután, hogy a hívóalkalmazás elengedi a mikrofont, akkor is, ha a „Leállítás a hívás végén” ki van kapcsolva"),
+    ("Choose meeting audio", "Értekezlet hangjának kiválasztása"),
+    ("Record one app or one output device in meetings instead of all computer audio.", "Egy alkalmazás vagy egy kimeneti eszköz hangját rögzítse az értekezleteken a számítógép teljes hangja helyett."),
+    ("All computer audio", "A számítógép teljes hangja"),
+    ("not playing now", "most nem játszik"),
 ];
 
 #[cfg(test)]

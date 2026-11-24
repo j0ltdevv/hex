@@ -3,9 +3,11 @@
 //! output's monitor (`stream.capture.sink`), such as Hex's own meeting
 //! system audio, are not microphone users. The same graph tracks running
 //! playback streams, so a call app still playing counts as present even off
-//! the microphone. Only stream metadata is read; no audio is captured.
+//! the microphone. Only stream metadata is read; no audio is captured. A
+//! playback node's process tree (`/proc/<pid>/status`) is read only to leave
+//! Hex's own children, such as a `pw-cat` playback, out of the app list.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::BufReader;
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command, Stdio};
@@ -27,7 +29,22 @@ struct Node {
     output: bool,
     running: bool,
     client: Option<u64>,
+    /// The node's own name, which tells Hex's streams apart from apps'.
+    node_name: Option<String>,
+    /// The stable number a capture stream names this node by, from
+    /// `object.serial`; a node without one is named by its graph id.
+    serial: Option<String>,
     process: Process,
+}
+
+/// One application playing through PipeWire now, for Labs › Choose meeting
+/// audio: its stable id, its display name, and the node targets its running
+/// output streams answer to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PlayingApplication {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) targets: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -99,6 +116,16 @@ impl Graph {
                                 .as_u64()
                                 .or_else(|| client.as_str().and_then(|client| client.parse().ok()))
                         }),
+                        node_name: props
+                            .get("node.name")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned),
+                        serial: props.get("object.serial").and_then(|serial| {
+                            serial
+                                .as_u64()
+                                .map(|serial| serial.to_string())
+                                .or_else(|| serial.as_str().map(str::to_owned))
+                        }),
                         process: Process::from_props(&props),
                     },
                 );
@@ -134,6 +161,68 @@ impl Graph {
         deduplicated(applications)
     }
 
+    /// The applications with running output streams, each once, with every
+    /// node target its streams present now. Hex's own sounds are left out.
+    ///
+    /// The graph holds its nodes and clients in a hash map, so the answer is
+    /// collected per app and sorted rather than taken from whichever node
+    /// came first: a browser whose first stream reports no
+    /// `application.name` still lists the name its other stream reports, and
+    /// two readings of one graph always compare equal.
+    fn playing_applications(&self, own_pid: i32) -> Vec<PlayingApplication> {
+        self.playing_applications_with(own_pid, parent_pid)
+    }
+
+    /// [`Self::playing_applications`] with the process tree given, so a test
+    /// can name Hex's children without spawning them.
+    fn playing_applications_with(
+        &self,
+        own_pid: i32,
+        parent_of: impl Fn(i32) -> Option<i32>,
+    ) -> Vec<PlayingApplication> {
+        let mut applications: BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)> =
+            BTreeMap::new();
+        for (node_id, node) in &self.nodes {
+            if !node.output || !node.running {
+                continue;
+            }
+            let client = node
+                .client
+                .and_then(|client| self.clients.get(&client))
+                .cloned()
+                .unwrap_or_default();
+            let process = node.process.or(&client);
+            if is_hex_output(&process, node.node_name.as_deref(), own_pid, &parent_of) {
+                continue;
+            }
+            let Some(id) = process.binary.clone().or_else(|| process.name.clone()) else {
+                continue;
+            };
+            let target = node.serial.clone().unwrap_or_else(|| node_id.to_string());
+            let (names, targets) = applications.entry(id).or_default();
+            targets.insert(target);
+            names.extend(process.name);
+        }
+        let mut applications: Vec<PlayingApplication> = applications
+            .into_iter()
+            .map(|(id, (names, targets))| {
+                let name = names.into_iter().next().unwrap_or_else(|| id.clone());
+                PlayingApplication {
+                    id,
+                    name,
+                    targets: targets.into_iter().collect(),
+                }
+            })
+            .collect();
+        applications.sort_by(|left, right| {
+            left.name
+                .to_lowercase()
+                .cmp(&right.name.to_lowercase())
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        applications
+    }
+
     /// Whether any running output stream belongs to `canonical_bundle_id`.
     fn playing_output(&self, canonical_bundle_id: &str) -> bool {
         self.nodes
@@ -153,6 +242,44 @@ impl Graph {
                     == Some(canonical_bundle_id)
             })
     }
+}
+
+/// Hex's own ALSA streams name themselves `hex`; `hex_microphone` and the
+/// meeting monitors add their own names.
+const HEX_NODE_NAME: &str = "hex";
+
+/// Whether an output stream node is Hex's own sound: Hex's process, a child
+/// of Hex (its `pw-cat` playback, such as Hex Microphone's), or one of Hex's
+/// node names. The Meetings pane lists apps, and Hex is never one of them.
+fn is_hex_output(
+    process: &Process,
+    node_name: Option<&str>,
+    own_pid: i32,
+    parent_of: impl Fn(i32) -> Option<i32>,
+) -> bool {
+    if process.pid == Some(own_pid) {
+        return true;
+    }
+    if process
+        .pid
+        .is_some_and(|pid| parent_of(pid) == Some(own_pid))
+    {
+        return true;
+    }
+    node_name.is_some_and(|name| {
+        let name = name.to_ascii_lowercase();
+        name == HEX_NODE_NAME || name.starts_with("hex_") || name.starts_with("hex-")
+    })
+}
+
+/// The parent pid of the running process `pid`, from `/proc`; `None` when it
+/// has exited or its entry cannot be read.
+fn parent_pid(pid: i32) -> Option<i32> {
+    let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("PPid:"))
+        .and_then(|parent| parent.trim().parse().ok())
 }
 
 struct Monitor {
@@ -254,6 +381,18 @@ pub fn active_microphone_applications() -> Result<Vec<ActiveMicrophoneApplicatio
         .microphone_users(std::process::id() as i32))
 }
 
+/// The applications playing through PipeWire now, for Labs › Choose meeting
+/// audio. Without PipeWire this lists none until the next monitor try.
+pub(crate) fn playing_applications() -> Vec<PlayingApplication> {
+    let Ok(Some(shared)) = graph() else {
+        return Vec::new();
+    };
+    shared
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .playing_applications(std::process::id() as i32)
+}
+
 /// Whether any running PipeWire output stream belongs to the app
 /// `canonical_bundle_id`: a call keeps its output open, muted or not, and a
 /// hung-up call closes it with the microphone (#835). A graph that is not
@@ -335,6 +474,137 @@ mod tests {
         graph.apply(&json!({"id": 1, "info": null}));
         let users = graph.microphone_users(7);
         assert_eq!(users.len(), 1);
+    }
+
+    #[test]
+    fn running_output_streams_name_their_apps_and_node_targets() {
+        let mut graph = Graph::default();
+        for object in [
+            node(
+                11,
+                "running",
+                json!({"media.class": "Stream/Output/Audio", "application.process.binary": "chrome",
+                       "application.process.id": 41, "application.name": "Google Chrome",
+                       "object.serial": 88}),
+            ),
+            // A second stream of the same app that reports no name: the app
+            // keeps the name its other stream reports, whichever node the
+            // graph yields first.
+            node(
+                12,
+                "running",
+                json!({"media.class": "Stream/Output/Audio", "application.process.binary": "chrome",
+                       "application.process.id": 41, "object.serial": "89"}),
+            ),
+            // A serial-less node is named by its graph id.
+            node(
+                13,
+                "running",
+                json!({"media.class": "Stream/Output/Audio", "application.process.binary": "spotify",
+                       "application.process.id": 42}),
+            ),
+            // Its process properties are on the client.
+            json!({"id": 20, "type": "PipeWire:Interface:Client",
+                   "info": {"props": {"application.process.binary": "teams-for-linux",
+                                      "application.process.id": "43",
+                                      "application.name": "Teams"}}}),
+            node(
+                14,
+                "running",
+                json!({"media.class": "Stream/Output/Audio", "client.id": 20, "object.serial": 90}),
+            ),
+            // Suspended, a capture stream, and Hex itself are not sources.
+            node(
+                15,
+                "suspended",
+                json!({"media.class": "Stream/Output/Audio", "application.process.binary": "discord",
+                       "application.process.id": 44}),
+            ),
+            node(
+                16,
+                "running",
+                json!({"media.class": "Stream/Input/Audio", "application.process.binary": "zoom",
+                       "application.process.id": 45}),
+            ),
+            node(
+                17,
+                "running",
+                json!({"media.class": "Stream/Output/Audio", "application.process.binary": "hex",
+                       "application.process.id": 7}),
+            ),
+        ] {
+            graph.apply(&object);
+        }
+        let apps = graph.playing_applications(7);
+        assert_eq!(
+            apps,
+            [
+                PlayingApplication {
+                    id: "chrome".into(),
+                    name: "Google Chrome".into(),
+                    targets: vec!["88".into(), "89".into()],
+                },
+                PlayingApplication {
+                    id: "spotify".into(),
+                    name: "spotify".into(),
+                    targets: vec!["13".into()],
+                },
+                PlayingApplication {
+                    id: "teams-for-linux".into(),
+                    name: "Teams".into(),
+                    targets: vec!["90".into()],
+                },
+            ]
+        );
+    }
+
+    /// Hex's own sounds are never an app the pane offers: its in-process
+    /// playback, a `pw-cat` playback child of it (Hex Microphone), and any
+    /// node carrying one of Hex's names.
+    #[test]
+    fn hex_own_playback_is_never_an_app_to_choose() {
+        let mut graph = Graph::default();
+        for object in [
+            node(
+                1,
+                "running",
+                json!({"media.class": "Stream/Output/Audio", "application.process.binary": "hex",
+                       "application.process.id": 7, "node.name": "hex"}),
+            ),
+            // Hex Microphone's `pw-cat` playback: a child of Hex that also
+            // carries one of its names.
+            node(
+                2,
+                "running",
+                json!({"media.class": "Stream/Output/Audio", "application.process.binary": "pw-cat",
+                       "application.process.id": 77, "application.name": "Hex",
+                       "node.name": "hex_microphone"}),
+            ),
+            // Another child of Hex, known only by its process tree.
+            node(
+                3,
+                "running",
+                json!({"media.class": "Stream/Output/Audio", "application.process.binary": "pw-cat",
+                       "application.process.id": 78}),
+            ),
+            node(
+                4,
+                "running",
+                json!({"media.class": "Stream/Output/Audio", "application.process.binary": "spotify",
+                       "application.process.id": 41}),
+            ),
+        ] {
+            graph.apply(&object);
+        }
+        let apps = graph.playing_applications_with(7, |pid| matches!(pid, 77 | 78).then_some(7));
+        assert_eq!(
+            apps,
+            [PlayingApplication {
+                id: "spotify".into(),
+                name: "spotify".into(),
+                targets: vec!["4".into()],
+            }]
+        );
     }
 
     /// A muted call can leave the microphone and still play: a running

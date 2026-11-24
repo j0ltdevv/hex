@@ -264,6 +264,9 @@ impl Feature {
             Self::MeetingMicrophoneMute => {
                 "Mute Hex's microphone while a meeting records: the call's audio keeps recording and transcribing, and the microphone's packets stay in place as silence until you unmute (macOS)"
             }
+            Self::MeetingAudioSource => {
+                "Record one app or one output device in a meeting instead of all computer audio (labs.meeting_audio_source_choice); a chosen source that isn't playing records silence until it returns"
+            }
         }
     }
 }

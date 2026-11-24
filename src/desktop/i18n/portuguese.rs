@@ -1488,6 +1488,10 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Stop every call recording when the call ends", "Parar toda gravação de chamada quando a chamada termina"),
     ("Also stop an offered, calendar, or by-hand call recording 30 s after its call app leaves the microphone, even with Stop when the call ends off", "Também para uma gravação iniciada por oferta, pelo calendário ou à mão 30 s depois que o app da chamada deixa o microfone, mesmo com «Parar quando a chamada terminar» desligado"),
     ("Also stop an offered or by-hand call recording 30 s after its call app leaves the microphone, even with Stop when the call ends off", "Também para uma gravação iniciada por oferta ou à mão 30 s depois que o app da chamada deixa o microfone, mesmo com «Parar quando a chamada terminar» desligado"),
+    ("Choose meeting audio", "Escolher o áudio da reunião"),
+    ("Record one app or one output device in meetings instead of all computer audio.", "Grave o áudio de um app ou de uma saída de áudio nas reuniões em vez de todo o áudio do computador."),
+    ("All computer audio", "Todo o áudio do computador"),
+    ("not playing now", "não está reproduzindo agora"),
 ];
 
 #[cfg(test)]

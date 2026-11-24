@@ -11,6 +11,9 @@ use windows::Win32::Media::Audio::{
 use windows::Win32::System::Com::{
     CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
 };
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+};
 use windows::core::Interface;
 
 use super::{ActiveMicrophoneApplication, canonical_bundle_id_for, deduplicated};
@@ -133,6 +136,103 @@ pub(crate) fn process_canonical_bundle_id(pid: u32) -> Option<&'static str> {
     canonical_bundle_id_for(&executable, name.as_deref())
 }
 
+/// Every running process, from one Toolhelp snapshot: its pid, its parent's
+/// pid, and its executable's lowercased file name. `None` when the list
+/// cannot be read.
+pub(crate) fn running_processes() -> Option<Vec<(u32, u32, String)>> {
+    use windows::Win32::Foundation::CloseHandle;
+    // SAFETY: The snapshot handle is checked, walked once, and closed; each
+    // entry is a PROCESSENTRY32W this call owns.
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        if Process32FirstW(snapshot, &mut entry).is_err() {
+            let _ = CloseHandle(snapshot);
+            return None;
+        }
+        let mut processes = Vec::new();
+        loop {
+            processes.push((
+                entry.th32ProcessID,
+                entry.th32ParentProcessID,
+                entry_name(&entry),
+            ));
+            if Process32NextW(snapshot, &mut entry).is_err() {
+                break;
+            }
+        }
+        let _ = CloseHandle(snapshot);
+        Some(processes)
+    }
+}
+
+/// A PROCESSENTRY32W's executable file name, lowercased to compare with an
+/// app id.
+fn entry_name(entry: &PROCESSENTRY32W) -> String {
+    let length = entry
+        .szExeFile
+        .iter()
+        .position(|character| *character == 0)
+        .unwrap_or(entry.szExeFile.len());
+    String::from_utf16_lossy(&entry.szExeFile[..length]).to_ascii_lowercase()
+}
+
+/// The processes an audio session is never attributed past: the desktop, the
+/// service host, the service control manager, and the session manager. An
+/// app's helper walks up to its app, and never to one of these.
+const SYSTEM_EXECUTABLES: [&str; 4] =
+    ["explorer.exe", "svchost.exe", "services.exe", "wininit.exe"];
+
+/// The process whose executable names the app playing `pid`'s audio: the
+/// top-most ancestor that is not a shell or service process. A WebView2
+/// helper such as the new Teams' `msedgewebview2.exe` children is Teams, so
+/// the pane lists Teams once and the capture opens Teams' whole tree. The
+/// walk stops at a shell or system process, at a reserved pid (0 to 4, the
+/// System and Idle processes), at a parent that has exited, and at a cycle,
+/// so it always ends; a pid the list does not hold answers itself.
+pub(crate) fn application_pid(pid: u32, processes: &[(u32, u32, &str)]) -> u32 {
+    let parent_of = |pid: u32| {
+        processes
+            .iter()
+            .find(|(other, _, _)| *other == pid)
+            .map(|(_, parent, _)| *parent)
+    };
+    let mut app = pid;
+    let mut seen = vec![pid];
+    while let Some(parent) = parent_of(app) {
+        if parent <= 4 || seen.contains(&parent) {
+            break;
+        }
+        let Some((_, _, name)) = processes.iter().find(|(other, _, _)| *other == parent) else {
+            break;
+        };
+        if SYSTEM_EXECUTABLES
+            .iter()
+            .any(|system| name.eq_ignore_ascii_case(system))
+        {
+            break;
+        }
+        seen.push(parent);
+        app = parent;
+    }
+    app
+}
+
+/// `pid`'s executable file name, lowercased (such as `ms-teams.exe`), and
+/// its file stem as a display name, for Labs › Choose meeting audio.
+pub(crate) fn process_application(pid: u32) -> Option<(String, String)> {
+    let path = process_path(pid)?;
+    let executable = path.file_name()?.to_string_lossy().to_ascii_lowercase();
+    let name = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| executable.clone());
+    Some((executable, name))
+}
+
 fn process_path(pid: u32) -> Option<std::path::PathBuf> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
@@ -149,5 +249,65 @@ fn process_path(pid: u32) -> Option<std::path::PathBuf> {
         let ok = QueryFullProcessImageNameW(process, 0, buffer.as_mut_ptr(), &mut length);
         CloseHandle(process);
         (ok != 0).then(|| String::from_utf16_lossy(&buffer[..length as usize]).into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A call's WebView2 children are the app that plays its audio, so the
+    /// pane lists Teams rather than every WebView2 tree on the machine, and
+    /// the walk never climbs into the shell or the services.
+    #[test]
+    fn an_audio_session_belongs_to_its_top_most_ancestor_outside_the_shell() {
+        let processes = [
+            (4, 0, "system"),
+            (200, 4, "services.exe"),
+            (300, 4, "explorer.exe"),
+            (400, 300, "ms-teams.exe"),
+            (401, 400, "msedgewebview2.exe"),
+            (402, 401, "msedgewebview2.exe"),
+            (500, 300, "chrome.exe"),
+            (501, 500, "chrome.exe"),
+            // A service plays through its own helper: the walk stops at the
+            // service host.
+            (600, 4, "svchost.exe"),
+            (601, 600, "audiodg.exe"),
+            // The parent already exited, and a pid the list does not hold.
+            (800, 999, "zoom.exe"),
+        ];
+        assert_eq!(application_pid(401, &processes), 400);
+        assert_eq!(application_pid(402, &processes), 400);
+        assert_eq!(application_pid(400, &processes), 400);
+        assert_eq!(application_pid(501, &processes), 500);
+        assert_eq!(application_pid(601, &processes), 600);
+        assert_eq!(application_pid(800, &processes), 800);
+        assert_eq!(application_pid(900, &processes), 900);
+        // Explorer itself stays the app it is, rather than climbing to
+        // services.
+        assert_eq!(application_pid(300, &processes), 300);
+    }
+
+    /// A parent chain that loops back on itself ends at the last app before
+    /// the loop, so the walk never hangs.
+    #[test]
+    fn a_parent_cycle_stops_the_ancestor_walk() {
+        let processes = [(10, 11, "app.exe"), (11, 10, "other.exe")];
+        assert_eq!(application_pid(10, &processes), 11);
+        assert_eq!(application_pid(11, &processes), 10);
+    }
+
+    /// A name from the snapshot is compared without regard to the case the
+    /// executable was saved as.
+    #[test]
+    fn an_app_id_matches_its_executable_regardless_of_case() {
+        let processes = [(100, 4, "MS-Teams.EXE"), (101, 100, "msedgewebview2.exe")];
+        assert_eq!(application_pid(101, &processes), 100);
+        assert_eq!(
+            processes[0].2.to_ascii_lowercase(),
+            "ms-teams.exe",
+            "the listing lowercases it as the saved app id"
+        );
     }
 }

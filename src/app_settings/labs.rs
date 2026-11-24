@@ -261,6 +261,13 @@ pub struct LabsSettings {
     /// the call's own audio keeps recording and transcribing (macOS; Labs ›
     /// Mute the microphone while recording).
     pub meeting_microphone_mute: bool,
+    /// A meeting's computer audio records one app or one output device
+    /// instead of every output (every OS; Labs › Choose meeting audio).
+    pub meeting_audio_source: bool,
+    /// Which app or output that is while `meeting_audio_source` is on. A
+    /// malformed saved value is dropped by the settings loader, so this
+    /// reads as all computer audio.
+    pub meeting_audio_source_choice: crate::meeting::audio_source::SourceChoice,
     /// With `labs.annotate_replay` on, keeps a rolling 15 s display buffer via `SCClipBufferingOutput` (macOS 27+).
     pub annotate_replay: bool,
     /// An OpenCode service running in the default WSL distribution is used
@@ -582,6 +589,8 @@ impl Default for LabsSettings {
             transcript_edits: false,
             stop_any_call_recording: false,
             meeting_microphone_mute: false,
+            meeting_audio_source: false,
+            meeting_audio_source_choice: crate::meeting::audio_source::SourceChoice::All,
             groups: std::collections::BTreeMap::new(),
             stop_when_call_ends: None,
             meeting_descriptive_filenames: None,
