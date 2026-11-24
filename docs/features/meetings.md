@@ -435,7 +435,7 @@ Computer audio                                  // labs.meeting_audio_source
 ```
 
 Listing runs off the window thread
-([rune_ui/meeting_audio.rs](../../src/rune_ui/meeting_audio.rs)): Linux reads
+([rune_ui/meeting_audio/mod.rs](../../src/rune_ui/meeting_audio/mod.rs)): Linux reads
 `pactl -f json list sinks` and the one PipeWire `pw-dump --monitor` graph,
 macOS reads Core Audio process objects, and Windows reads
 `IAudioSessionManager2` render sessions and cpal's outputs. The Meetings row

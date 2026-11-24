@@ -277,7 +277,13 @@ mod tests {
 
     #[test]
     fn terminal_offers_working_folder_and_never_general_terminal_app() {
-        let dir = PathBuf::from("/tmp/acme-web");
+        // An absolute folder outside home: /tmp is absolute only on Unix, so
+        // the folder is home's sibling, which is absolute everywhere and is
+        // not shortened to ~.
+        let dir = crate::app_paths::home_dir()
+            .and_then(|home| home.parent().map(|parent| parent.join("acme-web")))
+            .unwrap_or_else(|| PathBuf::from("/tmp/acme-web"));
+        let folder = dir.display().to_string();
         let m = rule_match(
             None,
             Some(&dir),
@@ -287,8 +293,8 @@ mod tests {
         assert_eq!(
             m,
             Some(RuleMatch::Terminal {
-                folder: "/tmp/acme-web".into(),
-                display: "/tmp/acme-web".into(),
+                folder: folder.clone(),
+                display: folder,
             })
         );
         // Ghostty at home or root yields no rule at all (never "any Ghostty window").
