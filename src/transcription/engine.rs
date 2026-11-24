@@ -1437,6 +1437,15 @@ impl Worker {
                     "finished live stream"
                 );
                 let result = result.and_then(|text| check_closing_mark(text, closing_mark));
+                // Try Groq before accepting a successful local stream; keep
+                // stream text when no key exists, the request fails, or cancel.
+                let result = match result {
+                    Ok(text) if !job.cancel.is_cancelled() => crate::groq::prefer_groq(
+                        crate::groq::transcribe_if_configured(&clip),
+                        || Ok(text),
+                    ),
+                    other => other,
+                };
                 match result {
                     Ok(text) => job.finish(Ok(Transcribed {
                         text,

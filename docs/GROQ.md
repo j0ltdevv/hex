@@ -34,9 +34,11 @@ window or the environment rather than committing it to a dotfiles repository.
 ## What leaves the machine
 
 When a usable key exists, Hex tries Groq first for a dictation's complete audio
-clip. Audio is encoded as mono 16 kHz PCM WAV. The multipart request contains the
-selected model and WAV; the key belongs only in the bearer authorization header,
-never in a multipart field or form value.
+clip, even when a local live stream already produced text. Audio is encoded as
+mono 16 kHz PCM WAV. The multipart request contains the selected model and WAV;
+the key belongs only in the bearer authorization header, never in a multipart
+field or form value. A cancelled job skips the request; a failed or empty Groq
+result keeps the local stream's or whole-clip transcript.
 
 A successful Groq transcript enters the same processing, paste, History, and
 ordered-output path as a local transcript. Groq changes the route, not source
