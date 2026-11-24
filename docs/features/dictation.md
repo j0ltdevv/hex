@@ -1,11 +1,13 @@
 # Dictation
 
 Hold the configured shortcut, speak, and release. Hex normally transcribes locally and
-inserts the result at the current focus. This fork can instead send a dictation's audio
-to Groq when a nonempty API key is configured; missing keys and every Groq failure fall
-back to the existing local model. New captures do not cancel accepted
-work. Toggle mode has a cancel: its cancel shortcut, Escape by default,
-discards the recording (#786, #1022). In Hold mode on macOS, Escape pressed
+inserts the result at the current focus. This fork adds an explicit `SpeechProvider`
+choice: Local (the default, unchanged base path) or Groq. Groq sends a dictation's
+audio to the cloud only when that provider is selected and a key is available;
+missing keys, errors, empty results, and cancellation fall back to the existing
+local model. New captures do not cancel accepted work. Toggle mode has a cancel:
+its cancel shortcut, Escape by default, discards the recording (#786, #1022).
+In Hold mode on macOS, Escape pressed
 while the shortcut is still held past the hold threshold cancels it; a
 hands-free capture never takes Escape. Every other intentional dictation
 finishes and pastes. The other exception is a Labs › Caps Lock dictation
@@ -533,34 +535,44 @@ does not prove the physical dictation shortcut; see the [feature index](README.m
 ### Groq Dictation With Local Fallback
 
 ```ts
-Settings > General > Advanced > Dictation > Groq API key / Groq model   // dictate.groq-cloud-fallback
-├── Key source -> trimmed nonempty GROQ_API_KEY, else saved groq_api_key
-├── No nonempty key -> existing local model; no Groq request
-├── Key present -> send this dictation's audio to Groq first
+Settings > General > Advanced > Dictation > Dictation provider / Groq key / Groq model   // dictate.groq-cloud-fallback
+├── Local (default) -> existing local model only; a saved key alone sends no request
+├── Groq -> needs a key: trimmed GROQ_API_KEY, else <data>/groq.key, else legacy groq_api_key
+│   └── with HEX_APPLICATION_SUPPORT_DIR + HEX_GROQ_ALLOW_SYSTEM_KEYS=0 -> env/system keys ignored
+├── Key + Groq -> one off-worker request with language and vocabulary prompt
 │   ├── whisper-large-v3 (default) -> "Whisper Large V3"
 │   ├── whisper-large-v3-turbo -> "Whisper Large V3 Turbo"
-│   └── Success -> ordinary processing and ordered output; source labels unchanged
-└── Any Groq failure -> transcribe the same complete clip with the existing local model
+│   ├── FLAC upload -> HTTP 400/415/422 -> one WAV retry; other errors are not retried
+│   └── success -> ordinary processing and ordered output; source labels unchanged
+└── empty, error, or cancel -> transcribe the same complete clip once with the local model
 ```
 
 This changes dictation only: meetings, the local transcription API, and `hex
-transcribe` keep their existing local path. Choosing a local Speech model is still
-the fallback configuration, not a second request to Groq. The key is held only in
-owner-only settings; `GROQ_API_KEY` can override it for one launch without rewriting
-the file. Hex never logs the key, and CLI reads do not return it.
+transcribe` keep their existing local path. Choosing a local Speech model with
+the Groq provider selected still means Local is the fallback, not a second Groq
+request. `groq.key` under the Hex data root is owner-only (`0600`), and the
+legacy setting stays redacted and read-only through `hex settings`; with an
+overridden data root, `HEX_GROQ_ALLOW_SYSTEM_KEYS=0` ignores the environment key.
+Hex never logs the key. A bounded, in-memory usage ring records provider, model,
+outcome, samples, and duration only: no key, audio, prompt, language, transcript,
+or monetary cost, and no disk persistence.
 
-Sources: [groq.rs](../../src/groq.rs), the routing in
-[transcription/engine.rs](../../src/transcription/engine.rs) and
+Sources: [groq.rs](../../src/groq.rs) with [flac.rs](../../src/groq/flac.rs),
+[keys.rs](../../src/groq/keys.rs), [usage.rs](../../src/groq/usage.rs), the
+routing in [transcription/engine.rs](../../src/transcription/engine.rs) and
 [parakeet.rs](../../src/parakeet.rs), and settings in
 [app_settings.rs](../../src/app_settings.rs). Checks in
-[groq/tests.rs](../../src/groq/tests.rs) cover WAV encoding, environment/settings
-precedence, model IDs and defaulting, multipart field placement, bearer
-authentication, response parsing, redacted HTTP failures, and fallback selection.
-The engine and dictation worker contain the routing. A live Groq HTTP request was
-observed with a generated speech fixture; full shortcut-driven dictation, paste,
-and failure fallback on a live machine remain unverified. Groq changes the transcription
-route, not History's schema or source labels. See [the fork guide](../GROQ.md)
-for sync risks.
+[groq/tests.rs](../../src/groq/tests.rs) cover the Local default, a saved key
+not enabling Groq by itself, key precedence/isolation and key-file permissions,
+language/prompt multipart fields, FLAC then WAV retry on 400/415/422,
+cancellation, redacted errors/usage records, and provider serde metadata;
+[choice_tests.rs](../../src/control/settings/choice_tests.rs) guards the CLI
+choice against enum drift. The engine and dictation worker contain the routing.
+One live Groq HTTP request was observed with a generated speech fixture; full
+shortcut-driven dictation, paste, live fallback, and cost on a live machine
+remain unverified. Groq changes the transcription route, not
+History's source labels or schema. See [the fork guide](../GROQ.md) for sync
+risks.
 
 ### Dictate Without Processing
 

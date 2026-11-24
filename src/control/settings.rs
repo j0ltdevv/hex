@@ -627,7 +627,7 @@ fn parse(key: &Key, raw: &str, shortcuts: &ShortcutRules) -> Result<Value, Contr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app_settings::ModifierSide;
+    use crate::app_settings::{ModifierSide, SpeechProvider};
 
     use super::registry::NEEDS;
 
@@ -1319,6 +1319,25 @@ mod tests {
         assert_eq!(error.code, "read-only");
         assert!(error.message.contains("Settings or GROQ_API_KEY"));
         assert!(!error.message.contains(secret));
+    }
+
+    #[test]
+    fn speech_provider_choice_round_trips_through_cli() {
+        let defaults = AppSettings::default();
+        let shown = get(&defaults, "speech_provider").unwrap();
+        assert_eq!(shown[0].value, Value::String("local".into()));
+        assert_eq!(
+            shown[0].choices,
+            vec!["local".to_owned(), "groq".to_owned()]
+        );
+        let change = apply(&defaults, "speech_provider", "groq", &rules()).unwrap();
+        assert_eq!(change.settings.speech_provider, SpeechProvider::Groq);
+        assert_eq!(
+            get(&change.settings, "speech_provider").unwrap()[0].value,
+            Value::String("groq".into())
+        );
+        let error = apply(&defaults, "speech_provider", "cloud", &rules()).unwrap_err();
+        assert_eq!(error.code, "invalid-value");
     }
 
     #[test]

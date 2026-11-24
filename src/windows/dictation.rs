@@ -16,6 +16,7 @@ use crate::desktop::events::{
 };
 use crate::dictation::service::{DictationQueue, Effect, MICROPHONE_LOST, ServiceDictations};
 use crate::dictation::{DictationCapture, Finish, POST_RELEASE_TAIL, ReleaseWait};
+use crate::groq::PendingGroq;
 use crate::transcription::engine::{PendingTranscript, TranscriptionEngine};
 use crate::transcription::local_transcriber::LocalTranscriber;
 use crate::transcription::models::TranscriptionSelection;
@@ -63,6 +64,9 @@ pub fn wake() {
 struct Job {
     context: crate::windows::context::PendingContext,
     transcript: PendingTranscript,
+    /// Cloud result started beside this job when Groq is selected. None on
+    /// the default Local path.
+    groq: Option<PendingGroq>,
     audio_ms: u64,
     /// The language the model was asked for at submission.
     language: String,

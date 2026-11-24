@@ -15,12 +15,13 @@ use crate::dictation::context::ContextSnapshot;
 use crate::dictation::paste_last::LastDictation;
 use crate::dictation::processor::ProcessingObservation;
 use crate::dictation::{DictationClip, correction_watch, pad_for_parakeet};
+use crate::groq::PendingGroq;
 use crate::history::History;
 #[cfg(test)]
 use crate::history::HistoryKind;
 use crate::paste::{PasteMode, Paster};
 use crate::transcription::WarmTranscriber;
-use crate::transcription::engine::{PendingTranscript, TranscriptionEngine};
+use crate::transcription::engine::{PendingTranscript, Transcribed, TranscriptionEngine};
 use crate::transcription::gguf_session::{OfflineGgufSession, output_truncated};
 use crate::transcription::models::{
     TranscriptionModelId, TranscriptionSelection, model_path, validate,
@@ -91,6 +92,9 @@ struct InferenceJob {
     control: Arc<JobControl>,
     submitted_at: Instant,
     transcript: PendingTranscript,
+    /// Cloud result started beside this job when Groq is selected. None
+    /// everywhere else: local API, meetings, and file transcription stay local.
+    groq: Option<PendingGroq>,
     audio_ms: u64,
     prepare_ms: u128,
     target: TranscriptionTarget,
@@ -454,21 +458,35 @@ impl DictationWorker {
             _ => crate::history::Recording::keep(&samples),
         };
         let prepare_ms = submitted_at.elapsed().as_millis();
+        let groq_request = (crate::groq::speech_provider() == crate::groq::SpeechProvider::Groq)
+            .then(|| {
+                // The same context prompt the local run reads, carried to
+                // Groq with this capture alone.
+                let prompt = crate::dictation::vocabulary::for_dictation(|| {
+                    crate::dictation::vocabulary::transcription_prompt(500)
+                });
+                crate::groq::OwnedGroqRequest::new(
+                    samples.clone(),
+                    Some(language.clone()),
+                    prompt,
+                    crate::groq::groq_model(),
+                )
+            });
         let offline = Box::new(move |model: &mut WarmTranscriber, samples: Vec<f32>| {
             let _busy = DictationInference::begin();
-            crate::groq::prefer_groq(crate::groq::transcribe_if_configured(&samples), || {
-                let transcriber = model
-                    .activate(&selection)
-                    .map_err(|error| error.to_string())?;
-                crate::dictation::vocabulary::for_capture(&screen_terms, || {
-                    transcriber.transcribe(samples)
-                })
-                .map_err(|error| error.to_string())
+            let transcriber = model
+                .activate(&selection)
+                .map_err(|error| error.to_string())?;
+            crate::dictation::vocabulary::for_capture(&screen_terms, || {
+                transcriber.transcribe(samples)
             })
+            .map_err(|error| error.to_string())
         });
         let transcript = engine
             .finish_with(stream, samples, offline)
             .map_err(|_| "dictation worker is unavailable")?;
+        let cancel = transcript.cancel_token();
+        let groq = PendingGroq::start(groq_request, cancel);
         let ticket = OutputTicket::new(
             job_id.0,
             TicketKind::Dictation { job_id, target },
@@ -482,6 +500,7 @@ impl DictationWorker {
             control,
             submitted_at,
             transcript,
+            groq,
             audio_ms,
             prepare_ms,
             target,
@@ -811,14 +830,19 @@ fn run_inference_worker(
         let queue_ms = total_started.elapsed().as_millis();
         let inference_started = Instant::now();
         let audio_ms = job.audio_ms;
-        let result = job.transcript.wait().map(|transcribed| {
+        let transcript = job.transcript;
+        let groq = job.groq;
+        let result = transcript.wait().map(|transcribed| {
+            let text = crate::groq::settle_option(groq, &transcribed.text, |text| {
+                transcribed.accept_cloud_text(text)
+            });
             tracing::info!(
                 source = transcribed.source.label(),
                 finish_ms = transcribed.finish_ms,
                 audio_ms,
                 "transcribed dictation"
             );
-            let raw = transcribed.text;
+            let raw = text;
             // Labs › Stop phrase: the words that finished this capture never
             // reach the text, and a capture that was only the phrase reads as
             // empty.

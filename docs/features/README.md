@@ -886,11 +886,12 @@ Labs > Free memory when idle (off; 5/15/30/60 min, default 15)   // labs.md; tra
   -> nothing used the model that long and nothing records -> the model unloads
   -> next press, meeting chunk, or API request -> reloads first; audio waits, nothing lost
 
-Settings > General > Advanced > Dictation > Groq API key / Groq model   // dictate.groq-cloud-fallback
-  -> nonempty GROQ_API_KEY overrides the saved key; no key uses the local model
-  -> Whisper Large V3 (default) or Whisper Large V3 Turbo through Groq
-  -> Groq is tried first; any failure transcribes the same clip locally
-  -> live Groq HTTP request verified; full shortcut dictation/paste still unverified
+Settings > General > Advanced > Dictation > Dictation provider / Groq key / Groq model   // dictate.groq-cloud-fallback
+  -> Local is the default: on-device only, no Groq request even with a saved key
+  -> Groq needs a key: GROQ_API_KEY (unless isolated), then <data>/groq.key, then legacy setting
+  -> language and vocabulary prompt go with the audio; FLAC first, WAV retry on 400/415/422
+  -> success follows ordinary processing/ordered output; failure, empty result, or cancel -> one Local fallback
+  -> deterministic loopback checks; one ignored live smoke; shortcut/paste and live cost remain unverified
 ```
 
 The [detailed map](dictation.md) covers timing, successive captures, output

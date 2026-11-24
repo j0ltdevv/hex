@@ -8,7 +8,7 @@ use super::super::settings::toggle_menu;
 use super::super::{Menu, Ui};
 use crate::app_settings::AppSettings;
 use crate::desktop::i18n::tr;
-use crate::groq::{GroqApiKey, GroqModel};
+use crate::groq::{GroqApiKey, GroqModel, SpeechProvider};
 
 pub(in crate::rune_ui) fn draft(key: &Option<GroqApiKey>) -> TextEdit {
     TextEdit::new(crate::groq::draft_text(key))
@@ -29,8 +29,41 @@ pub(in crate::rune_ui) fn differs(ui: &Ui, key: &Option<GroqApiKey>) -> bool {
 
 const KEY_WIDTH: f32 = 280.0;
 const MODEL_WIDTH: f32 = 220.0;
+const PROVIDER_WIDTH: f32 = 160.0;
 
 pub(super) fn rows(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<super::super::controls::CardRow> {
+    let provider = &ui.settings.speech_provider;
+    let provider_select = select_sized(
+        p,
+        "speech-provider",
+        tr("Dictation provider"),
+        provider_label(provider),
+        None,
+        ui.open == Some(Menu::Pick("speech-provider")),
+        vec![
+            Choice {
+                label: "Local".to_owned(),
+                detail: None,
+                selected: provider == &SpeechProvider::Local,
+                choose: Box::new(|ui| {
+                    ui.open = None;
+                    ui.update(|settings| settings.speech_provider = SpeechProvider::Local);
+                }),
+            },
+            Choice {
+                label: "Groq".to_owned(),
+                detail: None,
+                selected: provider == &SpeechProvider::Groq,
+                choose: Box::new(|ui| {
+                    ui.open = None;
+                    ui.update(|settings| settings.speech_provider = SpeechProvider::Groq);
+                }),
+            },
+        ],
+        |ui| toggle_menu(ui, Menu::Pick("speech-provider")),
+        layer,
+        PROVIDER_WIDTH,
+    );
     let key = TextInput::new(&ui.groq_api_key)
         .placeholder("Paste Groq key")
         .label(tr("Groq API key"))
@@ -73,18 +106,33 @@ pub(super) fn rows(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Vec<super::super::
         MODEL_WIDTH,
     );
     vec![
+        setting_row(
+            p,
+            "speech-provider",
+            tr("Dictation provider"),
+            Some(
+                "Local is the default and runs Hex's on-device model only. Groq uses the cloud and requires an API key.",
+            ),
+            provider_select,
+        )
+        .into(),
         setting_row(p, "groq-api-key", tr("Groq API key"), None, key).into(),
         setting_row(
             p,
             "groq-model",
             tr("Groq model"),
-            Some(tr(
-                "Uses Groq when a key is set; otherwise Hex uses the local model.",
-            )),
+            Some("Used only when Dictation provider is Groq and a key is set."),
             model,
         )
         .into(),
     ]
+}
+
+fn provider_label(provider: &SpeechProvider) -> &'static str {
+    match provider {
+        SpeechProvider::Local => "Local",
+        SpeechProvider::Groq => "Groq",
+    }
 }
 
 fn groq_model_label(model: GroqModel) -> &'static str {

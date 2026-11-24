@@ -437,7 +437,7 @@ pub(super) const TRANSLATIONS: &[(&str, [&str; 6])] = &[
     ("Groq model", ["Model Groq", "Groq 模型", "Groq モデル", "Groq-Modell", "Modelo de Groq", "Модель Groq"]),
     ("Whisper Large V3", ["Whisper Large V3", "Whisper Large V3", "Whisper Large V3", "Whisper Large V3", "Whisper Large V3", "Whisper Large V3"]),
     ("Whisper Large V3 Turbo", ["Whisper Large V3 Turbo", "Whisper Large V3 Turbo", "Whisper Large V3 Turbo", "Whisper Large V3 Turbo", "Whisper Large V3 Turbo", "Whisper Large V3 Turbo"]),
-    ("Uses Groq when a key is set; otherwise Hex uses the local model.", ["Hex używa Groq, gdy ustawiono klucz; w przeciwnym razie korzysta z modelu lokalnego.", "设置了密钥时，Hex 使用 Groq；否则使用本地模型。", "キーが設定されている場合、Hex は Groq を使います。それ以外はローカルモデルを使います。", "Hex verwendet Groq, wenn ein Schlüssel festgelegt ist; andernfalls wird das lokale Modell verwendet.", "Hex usa Groq cuando hay una clave configurada; de lo contrario, usa el modelo local.", "Hex використовує Groq, якщо встановлено ключ; інакше використовує локальну модель."]),
+    ("Dictation provider", ["Dostawca dyktowania", "听写服务提供方", "音声入力のプロバイダー", "Diktat-Anbieter", "Proveedor de dictado", "Постачальник диктування"]),
     ("Send", ["Wysłano", "发送", "送信", "Senden", "Enviar", "Надсилання"]),
     ("Printed", ["Wypisano", "已输出", "出力", "Ausgegeben", "Impreso", "Виведено"]),
     ("Raw", ["Bez przetwarzania", "原文", "未処理", "Unverarbeitet", "Sin procesar", "Без обробки"]),
