@@ -121,10 +121,10 @@ pub(crate) fn output_devices() -> Vec<SourceEntry> {
     platform::output_devices()
 }
 
-/// Output devices from cpal, the default first, for macOS and Windows. The
-/// id is cpal's device id: Core Audio's UID on macOS, the WASAPI endpoint id
-/// on Windows.
-#[cfg(not(target_os = "linux"))]
+/// Output devices from cpal, the default first, for macOS. The id is cpal's
+/// device id, Core Audio's UID. Windows lists its outputs where the capture
+/// source matches them, so a saved choice names the same string.
+#[cfg(target_os = "macos")]
 fn listed_outputs() -> Vec<SourceEntry> {
     use cpal::traits::{DeviceTrait, HostTrait};
 

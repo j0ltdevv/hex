@@ -415,9 +415,13 @@ stream.
 Computer audio                                  // labs.meeting_audio_source
 ├── all computer audio -> every output, as before
 ├── one output -> only that output's monitor, loopback, or device
+│   ├── Windows -> that WASAPI endpoint's cpal loopback, matched by the
+│   │   endpoint id the pane listed; one that isn't listed records silence
 ├── one app -> only that app's playback
 │   ├── macOS -> the app's Core Audio processes, by canonical bundle id
-│   ├── Windows -> the output sessions of its executable, such as ms-teams.exe
+│   ├── Windows -> WASAPI process loopback of its executable's process tree,
+│   │   such as ms-teams.exe (Windows 10 version 2004 or later); its
+│   │   process-tree roots are looped back once each and mixed
 │   └── Linux -> its running Stream/Output/Audio nodes in PipeWire
 ├── chosen source isn't present -> the system track records silence and keeps
 │   its place on the timeline; the 2 s route check starts recording when it
@@ -437,22 +441,49 @@ macOS reads Core Audio process objects, and Windows reads
 `IAudioSessionManager2` render sessions and cpal's outputs. The Meetings row
 asks again every 3 s while its Settings view shows.
 
+On Windows the choice is read as the system source opens: one output
+opens that endpoint's existing cpal loopback, and a chosen app opens WASAPI
+process loopback (`ActivateAudioInterfaceAsync` on
+`VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK`) for each process-tree root whose
+executable matches the id, mixed into the one track
+([meeting/windows/process_loopback.rs](../../src/meeting/windows/process_loopback.rs)).
+A chosen output that is unplugged closes its loopback and records silence; the
+2 s route check opens it again when it returns. An app that isn't running, or
+whose process set changes, is re-listed on the same check and reopens then, and
+an app that never opens records silence: a chosen source never widens to every
+output. Process loopback needs Windows 10 version 2004 (build 19041) or later;
+on an older build the activation fails, is logged once, and the track records
+silence. With the lab off, or All computer audio chosen, the Windows source is
+exactly the loopback described above, call-app routing included.
+
 Checks: `a_choice_records_only_its_own_source`,
 `a_capture_targets_its_own_sink_and_the_fallback_keeps_the_default`, and
 `an_exited_monitor_is_restarted_while_its_sink_keeps_its_name`
 ([meeting/linux.rs](../../src/meeting/linux.rs));
 `running_output_streams_name_their_apps_and_node_targets`
-([microphone_activity/linux.rs](../../src/microphone_activity/linux.rs)); the
-choice's serde and gate tests in
+([microphone_activity/linux.rs](../../src/microphone_activity/linux.rs));
+`an_output_is_named_by_its_endpoint_id_or_its_name` and
+`a_saved_output_matches_only_its_own_endpoint`
+([meeting/windows.rs](../../src/meeting/windows.rs)), and
+`the_roots_of_an_app_are_its_processes_whose_parent_is_not_its_own`,
+`the_executable_matches_regardless_of_case_and_only_exactly`,
+`an_orphan_whose_parent_has_exited_is_a_root`,
+`process_loopback_asks_for_16_bit_stereo_at_the_requested_rate`, and
+`interleaved_16_bit_frames_become_mono_float`
+([meeting/windows/process_loopback.rs](../../src/meeting/windows/process_loopback.rs));
+the choice's serde and gate tests in
 [meeting/audio_source.rs](../../src/meeting/audio_source.rs);
 `an_invalid_meeting_audio_source_choice_loads_all_computer_audio` and the
 save/load round trip ([app_settings/persistence/tests.rs](../../src/app_settings/persistence/tests.rs));
 `meeting_audio_source_lists_all_audio_and_keeps_a_missing_choice_visible`
 ([rune_ui/tests/panes.rs](../../src/rune_ui/tests/panes.rs)). Not verified on a
 real PipeWire session: whether `target.object` links a capture stream to an
-app's playback node, like the existing unverified sink targeting. macOS's tap
-and Windows' loopback backends land in this change; neither app capture has
-been recorded on hardware.
+app's playback node, like the existing unverified sink targeting. Not verified
+on hardware either: no Windows machine has recorded with the chosen output or
+app, and CI has no audio devices, so the WASAPI process loopback is compiled
+and its pure logic tested there but never opened. An app that plays call audio
+from a helper outside its process tree is not captured; a child process,
+WebView2 behind the new Teams included, is part of the tree.
 
 ## Sub-features
 

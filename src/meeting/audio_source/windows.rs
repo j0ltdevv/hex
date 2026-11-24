@@ -28,7 +28,11 @@ pub(super) fn playing_apps() -> Vec<SourceEntry> {
     apps
 }
 
-/// The active output endpoints, the default first.
+/// The listed output endpoints, the default first, named exactly as the
+/// capture source matches a saved output choice.
 pub(super) fn output_devices() -> Vec<SourceEntry> {
-    super::listed_outputs()
+    crate::meeting::os::output_choices()
+        .into_iter()
+        .map(|(id, name)| SourceEntry { id, name })
+        .collect()
 }

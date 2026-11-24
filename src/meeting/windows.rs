@@ -11,6 +11,13 @@
 //! VB-Cable, Voicemeeter) also plays the user's processed microphone and
 //! replays the call on the physical output; a manual recording hears every
 //! active output. A change in the chosen outputs reopens the source.
+//!
+//! Labs › Choose meeting audio replaces that with one source: one output
+//! endpoint, looped back alone and recorded as silence while it is unplugged,
+//! or one app, through WASAPI process loopback
+//! ([process_loopback](self::process_loopback)). A chosen source never falls
+//! back to every output. With the lab off, or all computer audio chosen, this
+//! file behaves exactly as before.
 
 use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
@@ -23,11 +30,15 @@ use cpal::{SampleFormat, SizedSample, StreamConfig};
 use windows::Win32::Media::Audio::{eCapture, eRender};
 
 use super::SAMPLE_RATE;
+use super::audio_source::SourceChoice;
 use super::capture::{LiveSource, MIX_HOLD, POLL_INTERVAL, PacketSink, To16k, mix};
 use super::loopback_route::{self, Choice};
 use crate::microphone_activity::{
     EndpointSessions, active_endpoint_sessions, process_canonical_bundle_id,
 };
+
+#[path = "windows/process_loopback.rs"]
+mod process_loopback;
 
 const QUEUE_CAPACITY: usize = 256;
 /// How often the source checks that the outputs to hear have not changed.
@@ -38,11 +49,24 @@ pub(super) fn ensure_system_audio() -> Result<()> {
     Ok(())
 }
 
+/// Opens the system track's audio: every output as always, or the one output
+/// or app Labs › Choose meeting audio names. The choice is read as each
+/// stream opens, so a turned-off lab, or a new choice, applies to the next
+/// stream the supervisor opens.
 pub(super) fn open_system_audio(
     _sink: &PacketSink,
     application: Option<&str>,
 ) -> Result<Box<dyn LiveSource>> {
-    LoopbackSource::start(application).map(|source| Box::new(source) as Box<dyn LiveSource>)
+    match SourceChoice::effective() {
+        SourceChoice::All => {
+            LoopbackSource::start(application).map(|source| Box::new(source) as Box<dyn LiveSource>)
+        }
+        SourceChoice::Output { id, .. } => {
+            SingleOutputSource::start(&id).map(|source| Box::new(source) as Box<dyn LiveSource>)
+        }
+        SourceChoice::App { id, .. } => process_loopback::AppSource::start(&id)
+            .map(|source| Box::new(source) as Box<dyn LiveSource>),
+    }
 }
 
 fn device_name(device: &cpal::Device) -> String {
@@ -91,19 +115,47 @@ fn outputs() -> Result<Vec<OutputDevice>> {
     Ok(outputs)
 }
 
+/// The string naming an output: cpal's endpoint id where the device has
+/// one, else its name. Labs › Choose meeting audio lists these, a saved
+/// Output choice names one, and [`SingleOutputSource`] matches one, so all
+/// three have to agree.
+fn endpoint_key(endpoint: Option<&str>, name: &str) -> String {
+    endpoint
+        .filter(|id| !id.is_empty())
+        .map_or_else(|| name.to_owned(), str::to_owned)
+}
+
+/// [`endpoint_key`] for a listed output.
+fn endpoint_of(device: &OutputDevice) -> String {
+    endpoint_key(device.endpoint.as_deref(), &device.name)
+}
+
 /// Every listed output's endpoint id, or its name where cpal has no id.
 fn output_endpoints(devices: &[OutputDevice]) -> Vec<String> {
-    let mut endpoints = devices
-        .iter()
-        .map(|device| {
-            device
-                .endpoint
-                .clone()
-                .unwrap_or_else(|| device.name.clone())
-        })
-        .collect::<Vec<_>>();
+    let mut endpoints = devices.iter().map(endpoint_of).collect::<Vec<_>>();
     endpoints.sort();
     endpoints
+}
+
+/// The listed outputs the Meetings pane offers, the default first, as
+/// `(endpoint, name)`: the same endpoint strings this file matches a saved
+/// Output choice against.
+pub(super) fn output_choices() -> Vec<(String, String)> {
+    match outputs() {
+        Ok(devices) => devices
+            .into_iter()
+            .map(|device| (endpoint_of(&device), device.name))
+            .collect(),
+        Err(error) => {
+            tracing::debug!(%error, "could not list the audio outputs");
+            Vec::new()
+        }
+    }
+}
+
+/// The position of the chosen endpoint among the listed ones.
+fn chosen_index(endpoints: &[String], chosen: &str) -> Option<usize> {
+    endpoints.iter().position(|endpoint| endpoint == chosen)
 }
 
 /// The outputs to loop back: those of `chosen`, or every one.
@@ -458,6 +510,143 @@ impl LiveSource for LoopbackSource {
     }
 }
 
+/// The one output Labs › Choose meeting audio names, looped back alone.
+///
+/// A chosen output is never replaced by another: while it is unplugged, or
+/// would not open, this source records nothing and the track writer pads the
+/// gap. The 2 s route check reports the endpoint appearing or going away, as
+/// the every-output source reports a changed output list, and the supervisor
+/// reopens the source then: it opens the output, or records silence until it
+/// is listed, so the choice follows the device across plugging, switching,
+/// and Bluetooth profile changes.
+struct SingleOutputSource {
+    /// The chosen endpoint, as [`endpoint_key`] names it.
+    endpoint: String,
+    /// Kept while no stream is open, so the audio channel never disconnects.
+    sender: SyncSender<(usize, Vec<f32>)>,
+    buffers: Receiver<(usize, Vec<f32>)>,
+    errors: Receiver<(usize, String)>,
+    /// The output's stream, while the endpoint is listed and it opened.
+    output: Option<Output>,
+    /// Whether the endpoint was listed when this source opened.
+    listed: bool,
+    route_checked: Instant,
+}
+
+impl SingleOutputSource {
+    fn start(endpoint: &str) -> Result<Self> {
+        let devices = outputs()?;
+        let endpoints = devices.iter().map(endpoint_of).collect::<Vec<_>>();
+        let index = chosen_index(&endpoints, endpoint);
+        let (sender, buffers) = mpsc::sync_channel(QUEUE_CAPACITY);
+        let (error_sender, errors) = mpsc::sync_channel(1);
+        let output = match index {
+            Some(index) => {
+                let device = &devices[index];
+                let (stream, rate) = open_output(&device.device, 0, sender.clone(), error_sender)?;
+                tracing::info!(
+                    device = %device.name,
+                    endpoint,
+                    rate,
+                    "the chosen meeting audio output started"
+                );
+                Some(Output {
+                    name: device.name.clone(),
+                    stream: Some(stream),
+                    resample: To16k::new(rate)?,
+                    pending: Vec::new(),
+                })
+            }
+            None => {
+                tracing::info!(
+                    endpoint,
+                    "the chosen meeting audio output isn't connected; recording silence until it returns"
+                );
+                None
+            }
+        };
+        Ok(Self {
+            endpoint: endpoint.to_owned(),
+            sender,
+            buffers,
+            errors,
+            output,
+            listed: index.is_some(),
+            route_checked: Instant::now(),
+        })
+    }
+
+    /// Whether the chosen endpoint is listed differently from when this
+    /// source opened, so the supervisor reopens it into the right state. A
+    /// listing that cannot be read keeps the source as it is.
+    fn presence_change(&self) -> Option<&'static str> {
+        let listed = outputs()
+            .ok()?
+            .iter()
+            .map(endpoint_of)
+            .any(|endpoint| endpoint == self.endpoint);
+        (listed != self.listed).then_some("the chosen meeting audio output changed")
+    }
+
+    fn take(&mut self, (index, samples): (usize, Vec<f32>)) {
+        if index == 0
+            && let Some(output) = self.output.as_mut()
+        {
+            let resampled = output.resample.push(&samples);
+            output.pending.extend(resampled);
+        }
+    }
+}
+
+impl LiveSource for SingleOutputSource {
+    fn poll(&mut self, sink: &PacketSink) -> std::result::Result<(), String> {
+        // A stream that failed reopens the source while its endpoint is
+        // still listed; one whose endpoint went away reopens into silence.
+        while let Ok((_, error)) = self.errors.try_recv() {
+            if let Some(output) = self.output.take() {
+                tracing::warn!(
+                    device = %output.name,
+                    %error,
+                    "the chosen meeting audio output's loopback stopped"
+                );
+            }
+        }
+        if self.listed && self.output.is_none() {
+            return Err("the chosen audio output's loopback stopped".into());
+        }
+        if self.route_checked.elapsed() >= ROUTE_CHECK {
+            self.route_checked = Instant::now();
+            if let Some(reason) = self.presence_change() {
+                return Err(reason.into());
+            }
+        }
+        match self.buffers.recv_timeout(POLL_INTERVAL) {
+            Ok(first) => {
+                self.take(first);
+                while let Ok(next) = self.buffers.try_recv() {
+                    self.take(next);
+                }
+                let samples = match self.output.as_mut() {
+                    Some(output) => mix(&mut [&mut output.pending], MIX_HOLD),
+                    None => Vec::new(),
+                };
+                sink.send(SAMPLE_RATE, samples, None);
+                Ok(())
+            }
+            // The chosen output is not there: nothing to record now, and the
+            // track writer pads the gap (as it does for any silent output).
+            Err(mpsc::RecvTimeoutError::Timeout) => Ok(()),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err("the chosen audio output's loopback disconnected".into())
+            }
+        }
+    }
+
+    fn describe(&self) -> &'static str {
+        "wasapi-endpoint-loopback"
+    }
+}
+
 /// Opens Explorer with `path` selected.
 pub(crate) fn reveal(path: &Path) {
     use std::os::windows::process::CommandExt;
@@ -515,4 +704,35 @@ pub(super) fn move_to_trash(path: &Path) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An output with cpal's endpoint id and one whose backend gave none:
+    /// both are named the way the Meetings pane lists them, so the pane, the
+    /// saved choice, and the capture source compare the same strings.
+    #[test]
+    fn an_output_is_named_by_its_endpoint_id_or_its_name() {
+        let id = "{0.0.0.00000000}.{784DE0B4-F887-4314-83B9-4CCA2BC6AC3B}";
+        assert_eq!(endpoint_key(Some(id), "Speakers"), id);
+        assert_eq!(endpoint_key(None, "Speakers"), "Speakers");
+        assert_eq!(endpoint_key(Some(""), "Speakers"), "Speakers");
+    }
+
+    /// A saved output records that endpoint alone: a missing one matches
+    /// nothing and never another output.
+    #[test]
+    fn a_saved_output_matches_only_its_own_endpoint() {
+        let listed = [
+            endpoint_key(Some("{0.0.0.00000000}.{1}"), "Speakers"),
+            endpoint_key(None, "Headphones"),
+        ];
+        assert_eq!(chosen_index(&listed, "{0.0.0.00000000}.{1}"), Some(0));
+        assert_eq!(chosen_index(&listed, "Headphones"), Some(1));
+        assert_eq!(chosen_index(&listed, "Headphones "), None);
+        assert_eq!(chosen_index(&listed, "{0.0.0.00000000}.{2}"), None);
+        assert_eq!(chosen_index(&[], "Headphones"), None);
+    }
 }
