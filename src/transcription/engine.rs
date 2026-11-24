@@ -753,14 +753,16 @@ impl TranscriptionEngine {
             stream,
             clip,
             Box::new(|model, clip| {
-                // Labs › Skip long pauses, asked as the run starts, then
-                // padding that follows the cut rather than being trimmed by
-                // a trailing pause (#1629).
-                let clip =
-                    padded_whole_clip(clip, crate::labs::skip_pauses(), Some(model.model_id()));
-                model
-                    .transcribe(&clip)
-                    .map_err(|error| format!("{error:#}"))
+                crate::groq::prefer_groq(crate::groq::transcribe_if_configured(&clip), || {
+                    // Labs › Skip long pauses, asked as the run starts, then
+                    // padding that follows the cut rather than being trimmed by
+                    // a trailing pause (#1629).
+                    let clip =
+                        padded_whole_clip(clip, crate::labs::skip_pauses(), Some(model.model_id()));
+                    model
+                        .transcribe(&clip)
+                        .map_err(|error| format!("{error:#}"))
+                })
             }),
         )
     }

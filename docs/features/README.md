@@ -885,10 +885,18 @@ Labs > Caps Lock dictation (macOS, off)   // labs.md
 Labs > Free memory when idle (off; 5/15/30/60 min, default 15)   // labs.md; transcription/engine
   -> nothing used the model that long and nothing records -> the model unloads
   -> next press, meeting chunk, or API request -> reloads first; audio waits, nothing lost
+
+Settings > General > Advanced > Dictation > Groq API key / Groq model   // dictate.groq-cloud-fallback
+  -> nonempty GROQ_API_KEY overrides the saved key; no key uses the local model
+  -> Whisper Large V3 (default) or Whisper Large V3 Turbo through Groq
+  -> Groq is tried first; any failure transcribes the same clip locally
+  -> live Groq HTTP request verified; full shortcut dictation/paste still unverified
 ```
 
 The [detailed map](dictation.md) covers timing, successive captures, output
 commitment, named checks, and native-proof gaps.
+The [Groq fork guide](../GROQ.md) documents key precedence, privacy, local
+fallback, touched files, and upstream-sync risks.
 The macOS CLI entry is `hex listen`, with an optional authoritative `--device`.
 Do not start it beside an existing listener.
 

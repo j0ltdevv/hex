@@ -13,6 +13,7 @@ use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use serde::{Deserialize, Serialize};
 
 use crate::dictation::vocabulary::{VocabularyEntry, serialize_saved};
+pub use crate::groq::{GroqApiKey, GroqModel};
 use crate::transcription::models::{TranscriptionModelId, TranscriptionSelection};
 
 #[cfg(hex_capture)]
@@ -336,6 +337,10 @@ pub struct AppSettings {
     pub transcription: TranscriptionSelection,
     /// Where the speech model runs (Linux and Windows).
     pub transcription_device: TranscriptionDevice,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub groq_api_key: Option<GroqApiKey>,
+    #[serde(default)]
+    pub groq_model: GroqModel,
     pub transcription_recents: Vec<TranscriptionSelection>,
     pub keyboard_model_switching: KeyboardModelSwitching,
     pub dictation_processing: DictationProcessingSettings,
@@ -492,6 +497,8 @@ impl Default for AppSettings {
             show_dock_icon: true,
             transcription: default_transcription(),
             transcription_device: TranscriptionDevice::Auto,
+            groq_api_key: None,
+            groq_model: GroqModel::default(),
             transcription_recents: Vec::new(),
             keyboard_model_switching: KeyboardModelSwitching::default(),
             dictation_processing: DictationProcessingSettings::default(),
@@ -2192,6 +2199,8 @@ mod tests {
         );
         assert!(settings.show_dock_icon);
         assert_eq!(settings.transcription, AppSettings::default().transcription);
+        assert_eq!(settings.groq_api_key, None);
+        assert_eq!(settings.groq_model, GroqModel::LargeV3);
         assert!(
             !settings
                 .dictation_processing
@@ -2701,6 +2710,44 @@ mod tests {
             saved.microphone.as_deref(),
             Some("Studio Display Microphone")
         );
+    }
+
+    #[test]
+    fn groq_settings_round_trip_and_saves_are_owner_only() {
+        let dir = TestSettingsDir::new("groq-settings");
+        fs::write(&dir.path, b"{}").unwrap();
+        let older = AppSettings::load_from(&dir.path).unwrap();
+        assert_eq!(older.groq_api_key, None);
+        assert_eq!(older.groq_model, GroqModel::LargeV3);
+
+        let settings = AppSettings {
+            groq_api_key: Some("gsk_test_not_a_real_key".into()),
+            groq_model: GroqModel::Turbo,
+            ..AppSettings::default()
+        };
+        settings.write_to(&dir.path).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(&dir.path).unwrap()).unwrap();
+        assert_eq!(saved["groq_api_key"], "gsk_test_not_a_real_key");
+        assert_eq!(saved["groq_model"], "whisper-large-v3-turbo");
+        let loaded = AppSettings::load_from(&dir.path).unwrap();
+        assert_eq!(loaded.groq_api_key, settings.groq_api_key);
+        assert_eq!(loaded.groq_model, GroqModel::Turbo);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&dir.path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        AppSettings::default().write_to(&dir.path).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(&dir.path).unwrap()).unwrap();
+        assert!(saved.get("groq_api_key").is_none());
+        assert_eq!(saved["groq_model"], "whisper-large-v3");
     }
 
     #[test]

@@ -410,7 +410,7 @@ impl AppSettings {
             keep_unknown(&mut value, &original, &known);
         }
         let bytes = serde_json::to_vec_pretty(&value)?;
-        crate::durable::write(path, &bytes)?;
+        crate::durable::write_private(path, &bytes)?;
         Ok(())
     }
 
