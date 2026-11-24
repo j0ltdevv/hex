@@ -416,7 +416,8 @@ Computer audio                                  // labs.meeting_audio_source
 ├── all computer audio -> every output, as before
 ├── one output -> only that output's monitor, loopback, or device
 ├── one app -> only that app's playback
-│   ├── macOS -> the app's Core Audio processes, by canonical bundle id
+│   ├── macOS -> the app's Core Audio processes playing output, its
+│   │   helpers by canonical bundle id included; Hex's own audio never
 │   ├── Windows -> the output sessions of its executable, such as ms-teams.exe
 │   └── Linux -> its running Stream/Output/Audio nodes in PipeWire
 ├── chosen source isn't present -> the system track records silence and keeps
@@ -433,16 +434,42 @@ Computer audio                                  // labs.meeting_audio_source
 Listing runs off the window thread
 ([rune_ui/meeting_audio.rs](../../src/rune_ui/meeting_audio.rs)): Linux reads
 `pactl -f json list sinks` and the one PipeWire `pw-dump --monitor` graph,
-macOS reads Core Audio process objects, and Windows reads
+macOS reads Core Audio process objects and output devices, and Windows reads
 `IAudioSessionManager2` render sessions and cpal's outputs. The Meetings row
 asks again every 3 s while its Settings view shows.
+
+On macOS the choice is a private Core Audio process tap
+([meeting/macos/system_audio.rs](../../src/meeting/macos/system_audio.rs)).
+Every output keeps the global tap that excludes Hex, with ScreenCaptureKit as
+its fallback. One app taps `initMonoMixdownOfProcesses` over every one of
+the chosen app's process objects that plays output, so a browser's renderers
+or Teams' and Zoom's helpers are the app and Hex's own processes never are.
+One output taps `initExcludingProcesses:andDeviceUID:withStream:` with stream
+0, and its private aggregate names that device as its main and clock device
+instead of the default output; the device is not a sub-device, which is what
+left USB interfaces delivering nothing to the IOProc, and a tap-only aggregate
+is built if Core Audio refuses that. A chosen app's process objects, or a
+chosen output's presence, is re-read on the same 2 s route check the default
+output uses and the tap is rebuilt in place when it changes; while nothing
+matches, the source delivers no audio and the track writer pads the gap when
+it returns. A chosen source never falls back to ScreenCaptureKit, which would
+record the whole display, and never widens to all audio: a tap that cannot be
+created fails that stream and the supervisor retries it. Output devices are
+listed by `kAudioDevicePropertyDeviceUID` with the name Core Audio reports
+(`kAudioObjectPropertyName`), the default first.
 
 Checks: `a_choice_records_only_its_own_source`,
 `a_capture_targets_its_own_sink_and_the_fallback_keeps_the_default`, and
 `an_exited_monitor_is_restarted_while_its_sink_keeps_its_name`
 ([meeting/linux.rs](../../src/meeting/linux.rs));
 `running_output_streams_name_their_apps_and_node_targets`
-([microphone_activity/linux.rs](../../src/microphone_activity/linux.rs)); the
+([microphone_activity/linux.rs](../../src/microphone_activity/linux.rs));
+`a_chosen_meeting_app_taps_every_one_of_its_processes`,
+`a_helper_process_belongs_to_the_app_its_bundle_id_names`, and
+`hex_is_never_an_app_a_meeting_records`
+([microphone_activity.rs](../../src/microphone_activity.rs));
+`a_meeting_lists_each_output_once_with_the_default_first`
+([audio/output_route.rs](../../src/audio/output_route.rs)); the
 choice's serde and gate tests in
 [meeting/audio_source.rs](../../src/meeting/audio_source.rs);
 `an_invalid_meeting_audio_source_choice_loads_all_computer_audio` and the
@@ -450,9 +477,12 @@ save/load round trip ([app_settings/persistence/tests.rs](../../src/app_settings
 `meeting_audio_source_lists_all_audio_and_keeps_a_missing_choice_visible`
 ([rune_ui/tests/panes.rs](../../src/rune_ui/tests/panes.rs)). Not verified on a
 real PipeWire session: whether `target.object` links a capture stream to an
-app's playback node, like the existing unverified sink targeting. macOS's tap
-and Windows' loopback backends land in this change; neither app capture has
-been recorded on hardware.
+app's playback node, like the existing unverified sink targeting. macOS's app
+and output taps compile and lint, but no app, device, or output capture has
+been recorded on hardware, so a helper that starts playing between route
+checks, a device-pinned tap's aggregate clock, and the audio a rebuild leaves
+out are all unmeasured; Windows' loopback backend lands in this change too, and its
+app capture has not been recorded on hardware either.
 
 ## Sub-features
 

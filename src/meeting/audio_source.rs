@@ -121,10 +121,12 @@ pub(crate) fn output_devices() -> Vec<SourceEntry> {
     platform::output_devices()
 }
 
-/// Output devices from cpal, the default first, for macOS and Windows. The
-/// id is cpal's device id: Core Audio's UID on macOS, the WASAPI endpoint id
-/// on Windows.
-#[cfg(not(target_os = "linux"))]
+/// Output devices from cpal, the default first, for Windows. The id is the
+/// WASAPI endpoint id cpal carries, the same string `IMMDevice::GetId` gives
+/// the audio session enumeration. macOS lists Core Audio's own output devices
+/// instead (`audio_source/macos.rs`), because a meeting's tap names their
+/// UIDs.
+#[cfg(target_os = "windows")]
 fn listed_outputs() -> Vec<SourceEntry> {
     use cpal::traits::{DeviceTrait, HostTrait};
 

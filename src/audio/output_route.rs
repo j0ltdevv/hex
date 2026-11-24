@@ -1,6 +1,8 @@
-//! Whether the default output plays through speakers or headphones, for
-//! Labs › Only on speakers. Anything Hex can't classify counts as speakers,
-//! so "While dictating" applies as before.
+//! What an output is, and which outputs exist: whether the default plays
+//! through speakers or headphones for Labs › Only on speakers (anything Hex
+//! can't classify counts as speakers, so "While dictating" applies as
+//! before), and on macOS the output devices Labs › Choose meeting audio
+//! offers, with the Core Audio UID a meeting's tap names.
 
 /// What the default output is, as far as "While dictating" cares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -91,18 +93,26 @@ fn read_u32(object: u32, selector: u32, scope: u32) -> Option<u32> {
 /// The UID a device reports, or `None` when CoreAudio cannot name it.
 #[cfg(target_os = "macos")]
 fn read_uid(device: u32) -> Option<String> {
+    use objc2_core_audio::kAudioDevicePropertyDeviceUID;
+
+    read_cf_string(device, kAudioDevicePropertyDeviceUID)
+}
+
+/// A string property of a CoreAudio object, or `None` when it has none.
+#[cfg(target_os = "macos")]
+fn read_cf_string(object: u32, selector: u32) -> Option<String> {
     use std::ffi::c_void;
     use std::mem::size_of;
     use std::ptr::NonNull;
 
     use objc2_core_audio::{
-        AudioObjectGetPropertyData, AudioObjectPropertyAddress, kAudioDevicePropertyDeviceUID,
-        kAudioObjectPropertyElementMain, kAudioObjectPropertyScopeGlobal,
+        AudioObjectGetPropertyData, AudioObjectPropertyAddress, kAudioObjectPropertyElementMain,
+        kAudioObjectPropertyScopeGlobal,
     };
     use objc2_core_foundation::{CFRetained, CFString};
 
     let mut address = AudioObjectPropertyAddress {
-        mSelector: kAudioDevicePropertyDeviceUID,
+        mSelector: selector,
         mScope: kAudioObjectPropertyScopeGlobal,
         mElement: kAudioObjectPropertyElementMain,
     };
@@ -112,7 +122,7 @@ fn read_uid(device: u32) -> Option<String> {
     // property's CFString, which CoreAudio retains for us.
     let status = unsafe {
         AudioObjectGetPropertyData(
-            device,
+            object,
             NonNull::from(&mut address),
             0,
             std::ptr::null(),
@@ -127,6 +137,160 @@ fn read_uid(device: u32) -> Option<String> {
         return None;
     }
     Some(string.to_string())
+}
+
+/// Every `u32` a list property of a CoreAudio object holds, or `None` when
+/// it cannot be read.
+#[cfg(target_os = "macos")]
+fn read_u32_list(object: u32, selector: u32) -> Option<Vec<u32>> {
+    use std::ffi::c_void;
+    use std::mem::size_of;
+    use std::ptr::NonNull;
+
+    use objc2_core_audio::{
+        AudioObjectGetPropertyData, AudioObjectGetPropertyDataSize, AudioObjectPropertyAddress,
+        kAudioObjectPropertyElementMain, kAudioObjectPropertyScopeGlobal,
+    };
+
+    let mut address = AudioObjectPropertyAddress {
+        mSelector: selector,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain,
+    };
+    let mut size = 0_u32;
+    // SAFETY: The address and size outlive the call; no qualifier is read.
+    let status = unsafe {
+        AudioObjectGetPropertyDataSize(
+            object,
+            NonNull::from(&mut address),
+            0,
+            std::ptr::null(),
+            NonNull::from(&mut size),
+        )
+    };
+    if status != 0 || !(size as usize).is_multiple_of(size_of::<u32>()) {
+        return None;
+    }
+    let mut values = vec![0_u32; size as usize / size_of::<u32>()];
+    if values.is_empty() {
+        return Some(values);
+    }
+    let output = NonNull::new(values.as_mut_ptr())?;
+    // SAFETY: `values` holds exactly `size` bytes for CoreAudio to fill.
+    let status = unsafe {
+        AudioObjectGetPropertyData(
+            object,
+            NonNull::from(&mut address),
+            0,
+            std::ptr::null(),
+            NonNull::from(&mut size),
+            output.cast::<c_void>(),
+        )
+    };
+    if status != 0 {
+        return None;
+    }
+    values.truncate(size as usize / size_of::<u32>());
+    Some(values)
+}
+
+/// Whether a device plays to an output, read from the output streams it
+/// lists: a device with none cannot be heard, whatever it is. `None` when
+/// CoreAudio cannot say.
+#[cfg(target_os = "macos")]
+fn has_output_streams(device: u32) -> Option<bool> {
+    use std::ptr::NonNull;
+
+    use objc2_core_audio::{
+        AudioObjectGetPropertyDataSize, AudioObjectPropertyAddress, kAudioDevicePropertyStreams,
+        kAudioObjectPropertyElementMain, kAudioObjectPropertyScopeOutput,
+    };
+
+    let mut address = AudioObjectPropertyAddress {
+        mSelector: kAudioDevicePropertyStreams,
+        mScope: kAudioObjectPropertyScopeOutput,
+        mElement: kAudioObjectPropertyElementMain,
+    };
+    let mut size = 0_u32;
+    // SAFETY: The address and size outlive the call; no qualifier is read.
+    let status = unsafe {
+        AudioObjectGetPropertyDataSize(
+            device,
+            NonNull::from(&mut address),
+            0,
+            std::ptr::null(),
+            NonNull::from(&mut size),
+        )
+    };
+    (status == 0).then_some(size > 0)
+}
+
+/// The output devices CoreAudio lists now, each once, as the UID a tap names
+/// and the name a person reads. `None` when the list cannot be read, which
+/// never looks like a device that went away.
+#[cfg(target_os = "macos")]
+fn listed_output_devices() -> Option<Vec<(String, String)>> {
+    use objc2_core_audio::{kAudioHardwarePropertyDevices, kAudioObjectPropertyName};
+
+    let devices = read_u32_list(
+        objc2_core_audio::kAudioObjectSystemObject as u32,
+        kAudioHardwarePropertyDevices,
+    )?;
+    let mut listed = Vec::with_capacity(devices.len());
+    for device in devices {
+        // A device that reports no output streams cannot be recorded; one
+        // whose streams cannot be read is kept rather than hidden.
+        if has_output_streams(device) == Some(false) {
+            continue;
+        }
+        let Some(uid) = read_uid(device) else {
+            continue;
+        };
+        let name = read_cf_string(device, kAudioObjectPropertyName).unwrap_or_else(|| uid.clone());
+        listed.push((uid, name));
+    }
+    Some(listed)
+}
+
+/// The listed outputs with the default first, each UID once.
+#[cfg(any(target_os = "macos", test))]
+fn default_first(
+    mut devices: Vec<(String, String)>,
+    default: Option<&str>,
+) -> Vec<(String, String)> {
+    let mut seen: Vec<String> = Vec::with_capacity(devices.len());
+    devices.retain(|(uid, _)| {
+        if seen.iter().any(|known| known == uid) {
+            return false;
+        }
+        seen.push(uid.clone());
+        true
+    });
+    if let Some(at) = default.and_then(|default| devices.iter().position(|(uid, _)| uid == default))
+    {
+        devices[..=at].rotate_right(1);
+    }
+    devices
+}
+
+/// The output devices Labs › Choose meeting audio offers, the default first,
+/// as the Core Audio UID a meeting's tap names and the device's own name. A
+/// read that cannot answer lists nothing, which keeps the Meetings pane
+/// usable; capturing a choice that isn't listed records silence.
+#[cfg(target_os = "macos")]
+pub(crate) fn meeting_output_devices() -> Vec<(String, String)> {
+    let Some(devices) = listed_output_devices() else {
+        return Vec::new();
+    };
+    default_first(devices, default_output_uid().as_deref())
+}
+
+/// Whether the output device `uid` is one CoreAudio lists now. `None` when
+/// the list cannot be read, so a failed read never looks like a device that
+/// went away.
+#[cfg(target_os = "macos")]
+pub(crate) fn output_device_listed(uid: &str) -> Option<bool> {
+    listed_output_devices().map(|devices| devices.iter().any(|(listed, _)| listed == uid))
 }
 
 /// The UID of the default output now, for a caller that must notice when the
@@ -455,6 +619,47 @@ mod tests {
             OutputRoute::Speakers
         );
         assert_eq!(classify(BUILT_IN, None, None), OutputRoute::Speakers);
+    }
+
+    #[test]
+    fn a_meeting_lists_each_output_once_with_the_default_first() {
+        let devices = |pairs: &[(&str, &str)]| {
+            pairs
+                .iter()
+                .map(|(uid, name)| ((*uid).to_owned(), (*name).to_owned()))
+                .collect::<Vec<_>>()
+        };
+        let listed = devices(&[
+            ("BuiltInSpeakerDevice", "MacBook Pro Speakers"),
+            ("USB Audio", "Scarlett 2i2"),
+            ("AirPods Pro", "AirPods Pro"),
+        ]);
+        assert_eq!(
+            default_first(listed.clone(), Some("USB Audio")),
+            devices(&[
+                ("USB Audio", "Scarlett 2i2"),
+                ("BuiltInSpeakerDevice", "MacBook Pro Speakers"),
+                ("AirPods Pro", "AirPods Pro"),
+            ])
+        );
+        // A default that isn't listed, or that cannot be read, keeps the
+        // order Core Audio reported.
+        assert_eq!(default_first(listed.clone(), Some("gone")), listed);
+        assert_eq!(default_first(listed.clone(), None), listed);
+        // A device listed twice is offered once.
+        let twice = devices(&[
+            ("USB Audio", "Scarlett 2i2"),
+            ("USB Audio", "Scarlett 2i2"),
+            ("BuiltInSpeakerDevice", "MacBook Pro Speakers"),
+        ]);
+        assert_eq!(
+            default_first(twice, Some("USB Audio")),
+            devices(&[
+                ("USB Audio", "Scarlett 2i2"),
+                ("BuiltInSpeakerDevice", "MacBook Pro Speakers"),
+            ])
+        );
+        assert!(default_first(Vec::new(), Some("USB Audio")).is_empty());
     }
 
     #[test]
