@@ -96,7 +96,7 @@ internal class MicCapture(
         publish(SpeechPhase.Opening)
         // The model loads while the person speaks, not after they let go.
         transcriber.execute {
-            try { if (!ticket.cancelled) recognizer.prepare() } catch (_: Throwable) {}
+            try { if (!ticket.cancelled) recognizer.prepare(ticket.options) } catch (_: Throwable) {}
         }
         recorder.execute {
             try {
@@ -177,13 +177,12 @@ internal class MicCapture(
             try {
                 if (ticket.cancelled) return@execute
                 val options = ticket.options
-                val raw = recognizer.decode(pcm, count, options.spoken.code, options.translate,
-                    options.vocabulary.takeIf { it.isNotEmpty() }?.joinToString(", "), ticket.job)
+                val heard = recognizer.decode(pcm, count, options, ticket.job)
                 if (ticket.cancelled) return@execute
-                when (val text = raw?.let { SpokenText.format(it, options) }) {
+                when (val text = heard.text?.let { SpokenText.format(it, options) }) {
                     null -> complete(ticket, "Couldn’t transcribe. Try again.")
                     "" -> complete(ticket, "No speech heard")
-                    else -> complete(ticket, note, text)
+                    else -> complete(ticket, dictationNote(note, heard.note), text)
                 }
             } catch (_: UnsatisfiedLinkError) {
                 complete(ticket, "Speech model unavailable")
