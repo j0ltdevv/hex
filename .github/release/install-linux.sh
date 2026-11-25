@@ -223,6 +223,9 @@ if [ -n "${HEX_INSTALL_ARTIFACT:-}" ] && [ -z "$channel" ]; then channel=stable;
 version=${HEX_INSTALL_VERSION:-}
 
 if [ -z "${HEX_INSTALL_ARTIFACT:-}" ]; then
+  if [ -z "${HEX_RELEASE_BASE_URL:-}" ]; then
+    fail "This fork publishes no release feed. Set HEX_RELEASE_BASE_URL to an explicit fork-owned HTTPS manifest origin."
+  fi
   for command in curl jq openssl; do
     require "$command"
   done

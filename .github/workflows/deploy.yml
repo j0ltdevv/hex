@@ -24,17 +24,6 @@ name: Deploy
 #   .github/release/cf/.
 # - verify checks the live site and every download link without secrets.
 on:
-  push:
-    branches: [dev, production]
-    paths:
-      - "site/**"
-      - ".github/workflows/deploy.yml"
-      - ".github/release/deploy-site.sh"
-      - ".github/release/cloudflare-token.sh"
-      - ".github/release/cf/**"
-      - ".github/release/install-linux.sh"
-      - ".github/release/install-windows.ps1"
-      - "packaging/macos/legacy-appcast.xml"
   workflow_dispatch:
 
 permissions:

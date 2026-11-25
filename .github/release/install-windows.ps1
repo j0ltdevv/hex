@@ -7,20 +7,27 @@
 # (docs/plans/release-service.md).
 #
 # Trust: HTTPS to the release service, the manifest's size and SHA-256 for
-# the download, and the executable's Authenticode signature, which the app
-# checks again for every update.
+# the download, and an Authenticode signature from the expected publisher.
+# The staged exe/com are signature-checked BEFORE the version probe executes
+# them; without an expected signer the install fails closed. The app checks
+# the signature again for every update.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File install-windows.ps1
 #   powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Uninstall
+#   powershell -ExecutionPolicy Bypass -File install-windows.ps1 -ExpectedSigner 'Expected Publisher'
 
 [CmdletBinding()]
 param(
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [string]$ExpectedSigner
 )
 
 $ErrorActionPreference = 'Stop'
 
+if (-not $Uninstall -and -not $env:HEX_RELEASE_BASE_URL) {
+  throw 'This fork publishes no Windows binaries or update feed. Set HEX_RELEASE_BASE_URL to an explicit fork-owned HTTPS release origin before installing.'
+}
 $origin = if ($env:HEX_RELEASE_BASE_URL) { $env:HEX_RELEASE_BASE_URL.TrimEnd('/') } else { 'https://anoma.ly/release' }
 if (-not $origin.StartsWith('https://')) { throw 'HEX_RELEASE_BASE_URL must be an https:// URL.' }
 # HEX_INSTALL_CHANNEL=dev installs the newest dev build and keeps the
@@ -75,6 +82,24 @@ if ($Uninstall) {
     if (Test-Path $receipt) { Remove-Item $receipt -Force }
     Write-Output "Removed Hex. Logs and settings remain in $support."
     exit 0
+}
+
+# An explicit publisher is required before any staged binary is executed for
+# the --version probe. No default: an unsigned or differently signed download
+# must fail before it runs.
+$expectedSigner = if ($ExpectedSigner) { $ExpectedSigner.Trim() } elseif ($env:HEX_WINDOWS_EXPECTED_SIGNER) { $env:HEX_WINDOWS_EXPECTED_SIGNER.Trim() } else { '' }
+if ([string]::IsNullOrWhiteSpace($expectedSigner)) {
+    throw 'Set -ExpectedSigner (or HEX_WINDOWS_EXPECTED_SIGNER) to the expected Authenticode publisher before installing.'
+}
+function Assert-StagedSignature([string]$path) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $path
+    if ($signature.Status -ne 'Valid') {
+        throw "Refusing to run $path: Authenticode status is $($signature.Status)."
+    }
+    $subject = [string]$signature.SignerCertificate.Subject
+    if ([string]::IsNullOrWhiteSpace($subject) -or $subject.IndexOf($expectedSigner, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        throw "Refusing to run $path: signer '$subject' does not contain '$expectedSigner'."
+    }
 }
 
 # A 32-bit PowerShell on 64-bit Windows reports the real machine here.
@@ -161,20 +186,29 @@ $console = Join-Path $versionDir 'hex.com'
 Write-Output "Downloading Hex $version..."
 Save-Download $file $fileUrl $executable
 if ($consoleUrl) { Save-Download $consoleFile $consoleUrl $console }
-# The version probe runs the staged files and removes them again on a
-# mismatch. hex.com waits for hex.exe, a GUI program PowerShell wouldn't.
-if ($consoleUrl) {
-    $reported = (& $console --version) -split '\s+' | Select-Object -Last 1
-} else {
-    $probe = Join-Path $versionDir 'version.txt'
-    Start-Process $executable -ArgumentList '--version' -Wait -NoNewWindow -RedirectStandardOutput $probe
-    $reported = (Get-Content $probe -Raw).Trim() -split '\s+' | Select-Object -Last 1
-    Remove-Item $probe -Force
-}
-if ($reported -ne $version) {
-    Remove-Item $executable -Force
-    if (Test-Path $console) { Remove-Item $console -Force }
-    throw "The downloaded Hex reports version $reported, expected $version."
+# Fail closed: verify both staged files before executing either for the
+# version probe. hex.com waits for hex.exe, a GUI program PowerShell wouldn't.
+try {
+    Assert-StagedSignature $executable
+    if ($consoleUrl) { Assert-StagedSignature $console }
+    if ($consoleUrl) {
+        $reported = (& $console --version) -split '\s+' | Select-Object -Last 1
+    } else {
+        $probe = Join-Path $versionDir 'version.txt'
+        try {
+            Start-Process $executable -ArgumentList '--version' -Wait -NoNewWindow -RedirectStandardOutput $probe
+            $reported = (Get-Content $probe -Raw).Trim() -split '\s+' | Select-Object -Last 1
+        } finally {
+            if (Test-Path $probe) { Remove-Item $probe -Force }
+        }
+    }
+    if ($reported -ne $version) {
+        throw "The downloaded Hex reports version $reported, expected $version."
+    }
+} catch {
+    Remove-Item $executable -Force -ErrorAction SilentlyContinue
+    if (Test-Path $console) { Remove-Item $console -Force -ErrorAction SilentlyContinue }
+    throw
 }
 
 $pointerPartial = Join-Path $support 'current-version.partial'

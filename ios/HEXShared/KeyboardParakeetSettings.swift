@@ -2,18 +2,20 @@ import Foundation
 
 /// Settings › Dictation › Speech model in keyboard, in the App Group so the keyboard reads it. On unless
 /// the person turned it off. While it's on, the keyboard's own dictation transcribes with Hex's
-/// speech model (Parakeet V2 for English, Parakeet Ultra where Experiments › Multilingual model
+/// speech model (Parakeet V2 for English, Parakeet Ultra where Settings › Dictation › Model: Multilingual
 /// dictates) on the Neural Engine, without opening Hex, once the files are in the App Group and
 /// the keyboard has compiled the model. Whenever that isn't so, or isn't safe, it uses Apple's
 /// speech recognition exactly as with the switch off. Hex downloads the model by itself only
 /// where the keyboard can use it (`KeyboardParakeetDownload.hold`).
 nonisolated struct KeyboardParakeetSettings {
     static let enabledKey = "experiments.keyboardParakeet"
-    /// What the keyboard last said about it (`KeyboardState`), for the app's Experiments row.
+    /// What the keyboard last said about it (`KeyboardState`), for the app's Speech model in keyboard row.
     static let keyboardStateKey = "experiments.keyboardParakeet.keyboardState"
     static let keyboardStateAtKey = "experiments.keyboardParakeet.keyboardStateAt"
     /// Whether that state is the multilingual model's (Parakeet Ultra) rather than V2's.
     static let keyboardStateMultilingualKey = "experiments.keyboardParakeet.keyboardStateMultilingual"
+    /// Why the keyboard said `.unavailable` (`UnavailableReason`); none from builds before 1.0.5.
+    static let keyboardStateReasonKey = "experiments.keyboardParakeet.keyboardStateReason"
     /// The keyboard's memory limit on this iPhone, as the keyboard measured it.
     static let keyboardLimitKey = "experiments.keyboardParakeet.keyboardLimit"
     static let keyboardLimitNotification = "anomaly.hex.keyboardParakeet.keyboardLimit"
@@ -25,8 +27,21 @@ nonisolated struct KeyboardParakeetSettings {
         /// Neural Engine. The keyboard dictates with Apple's speech recognition meanwhile.
         case preparing
         case ready
-        /// This keyboard can't use it (its memory limit, no Neural Engine, a load that failed).
+        /// This keyboard can't use it (`UnavailableReason` says why).
         case unavailable
+    }
+
+    /// Why the keyboard couldn't use it, so Settings › Dictation can say so and what happens next.
+    enum UnavailableReason: String {
+        /// Too little memory left when the keyboard opened (`KeyboardParakeetBudget.allowsLoad`).
+        /// For now: the keyboard tries again the next time it opens.
+        case shortOfMemory
+        /// No Neural Engine on this device. For good.
+        case noNeuralEngine
+        /// It loaded, but not on the Neural Engine. Set aside in that keyboard process.
+        case notOnNeuralEngine
+        /// The load threw. Set aside in that keyboard process until Try again (`purgesCompiled`).
+        case loadFailed
     }
 
     private let defaults: UserDefaults?
@@ -63,16 +78,71 @@ nonisolated struct KeyboardParakeetSettings {
         return (state, Date(timeIntervalSince1970: at))
     }
 
-    func setKeyboardState(_ state: KeyboardState?, multilingual: Bool = false, now: Date = Date()) {
+    /// Settings › Dictation › Model keeps only the picked model: the other goes once the
+    /// picked one has loaded once, here (the keyboard) or in Hex (`SpeechModelChoice.unpicked`).
+    func hasLoadedOnce(multilingual: Bool) -> Bool {
+        defaults?.bool(forKey: Self.loadedOnceKey(multilingual)) == true
+    }
+
+    func setLoadedOnce(_ loaded: Bool, multilingual: Bool) {
+        defaults?.set(loaded, forKey: Self.loadedOnceKey(multilingual))
+    }
+
+    private static func loadedOnceKey(_ multilingual: Bool) -> String {
+        multilingual ? "experiments.keyboardParakeet.loadedOnce.ultra" : "experiments.keyboardParakeet.loadedOnce.v2"
+    }
+
+    /// Hex removed a model the keyboard may have compiled, or Try again was tapped after a load
+    /// that failed: the keyboard clears its compiled copies the next time it starts, before it
+    /// loads the picked one, and tries again a model it had set aside (`KeyboardParakeet`).
+    static let purgeCompiledKey = "experiments.keyboardParakeet.purgeCompiled"
+
+    var purgesCompiled: Bool {
+        get { defaults?.bool(forKey: Self.purgeCompiledKey) == true }
+        nonmutating set { defaults?.set(newValue, forKey: Self.purgeCompiledKey) }
+    }
+
+    /// Whether `keyboardState` is about the multilingual model rather than English's.
+    var keyboardStateIsMultilingual: Bool {
+        defaults?.bool(forKey: Self.keyboardStateMultilingualKey) == true
+    }
+
+    func setKeyboardState(
+        _ state: KeyboardState?,
+        multilingual: Bool = false,
+        reason: UnavailableReason? = nil,
+        now: Date = Date()
+    ) {
+        // Hex reads these from another process: `.unavailable` gets its reason before the
+        // state, so it is never seen without one (`forgetUnavailableWithoutReason`).
+        if state == .unavailable {
+            defaults?.set(reason?.rawValue, forKey: Self.keyboardStateReasonKey)
+        }
         defaults?.set(state?.rawValue, forKey: Self.keyboardStateKey)
         defaults?.set(multilingual, forKey: Self.keyboardStateMultilingualKey)
         defaults?.set(now.timeIntervalSince1970, forKey: Self.keyboardStateAtKey)
+        if state != .unavailable {
+            defaults?.removeObject(forKey: Self.keyboardStateReasonKey)
+        }
     }
 
-    /// The keyboard has the multilingual model loaded, so it dictates that model's language
-    /// itself instead of opening Hex (`KeyboardSelfDictation`).
-    var keyboardHasMultilingualModel: Bool {
-        isEnabled && keyboardState?.state == .ready && defaults?.bool(forKey: Self.keyboardStateMultilingualKey) == true
+    /// A keyboard from before 1.0.5 said `.unavailable` without a reason, and nothing else
+    /// clears it until the keyboard loads again, which some never do (a limit under 131 MB:
+    /// `KeyboardParakeetPlan.tooSmall` loads nothing and writes nothing). It says nothing true
+    /// any more, so Hex forgets it at launch; since 1.0.5 the keyboard always writes a reason.
+    @discardableResult
+    func forgetUnavailableWithoutReason() -> Bool {
+        guard keyboardState?.state == .unavailable,
+              defaults?.string(forKey: Self.keyboardStateReasonKey) == nil else { return false }
+        setKeyboardState(nil)
+        return true
+    }
+
+    /// Why the keyboard last said `.unavailable`; nil for any other state.
+    var unavailableReason: UnavailableReason? {
+        guard keyboardState?.state == .unavailable,
+              let raw = defaults?.string(forKey: Self.keyboardStateReasonKey) else { return nil }
+        return UnavailableReason(rawValue: raw)
     }
 
     /// The keyboard's memory limit (bytes), nil until the keyboard first opened on this iPhone.

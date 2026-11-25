@@ -16,6 +16,7 @@ pub(super) fn table() -> &'static HashMap<&'static str, &'static str> {
 
 #[rustfmt::skip]
 const TRANSLATIONS: &[(&str, &str)] = &[
+    ("macOS isn't letting Hex paste. Add Hex in System Settings > Privacy & Security > System & App Protection Override, then restart Hex.", "A macOS nem engedi, hogy a Hex beillesszen. Add hozzá a Hexet a Rendszerbeállítások > Adatvédelem és biztonság > Rendszer- és alkalmazásvédelem felülbírálása alatt, majd indítsd újra a Hexet."),
     ("Sent to", "Elküldve ide"),
     ("Nothing here yet", "Itt még nincs semmi"),
     ("Dictations, annotations, and captures show here.", "A diktálások, jegyzetek és felvételek itt jelennek meg."),
@@ -130,7 +131,6 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("The mic opens only while you dictate; the first moment can be clipped", "A mikrofon csak diktálás közben nyílik meg; az első pillanat lemaradhat"),
     ("The mic stays ready so dictation starts instantly; your system shows it in use", "A mikrofon készen áll, így a diktálás azonnal indul; a rendszer használatban lévőként jelzi"),
     ("Hex can't listen until the speech model has downloaded", "A Hex nem tud figyelni, amíg a beszédmodell le nem töltődik"),
-    ("Don't switch", "Ne váltson"),
     ("Your desktop assigns this key itself, so Hex can't confirm it", "Ezt a billentyűt az asztali környezet maga rendeli hozzá, ezért a Hex nem tudja megerősíteni"),
     ("Not installed", "Nincs telepítve"),
     ("Switch model with keyboard language", "Modellváltás a billentyűzet nyelvével"),
@@ -403,7 +403,6 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Recommended", "Ajánlott"),
     ("Settings", "Beállítások"),
     ("General", "Általános"),
-    ("Experiments", "Kísérletek"),
     ("Voice Filter", "Hangszűrő"),
     ("Recordings", "Felvételek"),
     ("Advanced", "Speciális"),
@@ -430,15 +429,17 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Add correction", "Javítás hozzáadása"),
     ("Vocabulary", "Szókincs"),
     ("Names and terms", "Nevek és kifejezések"),
-    ("Transcription and rewriting spell them right, and search finds them when misheard", "Az átírás és az átfogalmazás helyesen írja őket, és félrehalláskor a keresés megtalálja őket"),
-    ("Terms with spaces match only when said in full", "A szóközt tartalmazó kifejezések csak teljes egészükben kimondva egyeznek"),
+    ("Names and words Hex should spell right. Phrases match only when said in full.", "Nevek és szavak, amelyeket a Hexnek helyesen kell írnia. A kifejezések csak teljes egészükben kimondva egyeznek."),
+    ("Spell as", "Írásmód"),
+    ("Misheard as", "Félrehallva"),
+    ("optional", "nem kötelező"),
+    ("e.g. cappuccino", "pl. cappuccino"),
+    ("e.g. capuchin, cap a chino", "pl. kapucsínó, cap a chino"),
     ("Light", "Enyhe"),
     ("Strong", "Erős"),
     ("Add term", "Kifejezés hozzáadása"),
     ("1 term", "1 kifejezés"),
     ("{} terms", "{} kifejezés"),
-    ("Term (e.g. cappuccino)", "Kifejezés (pl. cappuccino)"),
-    ("Sounds like (e.g. capuchin, cap a chino)", "Hangzása (pl. kapucsínó, cap a chino)"),
     ("Up to 16 spellings per term are saved, and 64 characters per term or spelling.", "Kifejezésenként legfeljebb 16 írásmód, kifejezésenként és írásmódonként legfeljebb 64 karakter menthető."),
     ("Import…", "Importálás…"),
     ("Export…", "Exportálás…"),
@@ -526,11 +527,6 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Delete", "Törlés"),
     ("Remove", "Eltávolítás"),
     ("Dictation", "Diktálás"),
-    ("Groq API key", "Groq API-kulcs"),
-    ("Groq model", "Groq-modell"),
-    ("Whisper Large V3", "Whisper Large V3"),
-    ("Whisper Large V3 Turbo", "Whisper Large V3 Turbo"),
-    ("Dictation provider", "Diktálás szolgáltatója"),
     ("Send", "Küldés"),
     ("Printed", "Kiírva"),
     ("Raw", "Nyers"),
@@ -807,6 +803,7 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Context", "Környezet"),
     ("Current context", "Jelenlegi környezet"),
     ("None", "Nincs"),
+    ("Don't switch", "Ne váltson"),
     ("Keyboard", "Billentyűzet"),
     ("Browser navigation", "Böngészőnavigáció"),
     ("Application navigation", "Alkalmazásnavigáció"),
@@ -1485,6 +1482,8 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Stop every call recording when the call ends", "Minden hívásfelvétel leállítása a hívás végén"),
     ("Also stop an offered, calendar, or by-hand call recording 30 s after its call app leaves the microphone, even with Stop when the call ends off", "A felajánlott, naptárból indított vagy kézzel indított hívásfelvételt is leállítja 30 s-mal azután, hogy a hívóalkalmazás elengedi a mikrofont, akkor is, ha a „Leállítás a hívás végén” ki van kapcsolva"),
     ("Also stop an offered or by-hand call recording 30 s after its call app leaves the microphone, even with Stop when the call ends off", "A felajánlott vagy kézzel indított hívásfelvételt is leállítja 30 s-mal azután, hogy a hívóalkalmazás elengedi a mikrofont, akkor is, ha a „Leállítás a hívás végén” ki van kapcsolva"),
+    ("Indicator on any display", "Jelző bármelyik kijelzőn"),
+    ("Drag the meeting recording indicator to another display and it stays there", "Húzza a megbeszélés-felvétel jelzőjét egy másik kijelzőre, és ott is marad"),
 ];
 
 #[cfg(test)]
@@ -1496,7 +1495,12 @@ mod tests {
         let hungarian = super::table();
         let missing: Vec<&str> = super::super::all_translations()
             .map(|(english, _)| *english)
-            .filter(|english| hungarian.get(english).is_none_or(|text| text.is_empty()))
+            .filter(|english| {
+                let translated = hungarian.get(*english).copied().or_else(|| {
+                    super::super::groq_side::translate(super::super::HUNGARIAN_COLUMN, *english)
+                });
+                translated.is_none_or(|text| text.is_empty())
+            })
             .collect();
         assert!(missing.is_empty(), "no Hungarian for {missing:?}");
     }

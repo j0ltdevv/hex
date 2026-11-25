@@ -16,15 +16,20 @@ mod annotate_dictation;
 mod calls;
 mod clipboard_phrase;
 mod clock;
+mod confirm_cancel;
 mod failures;
 mod french;
+mod groq_side;
 mod history;
 mod hud_height;
 mod hungarian;
 mod labs;
+mod meeting_audio_source;
 mod meeting_mute;
 mod meetings;
 mod menu;
+mod middle_mouse;
+mod model_switch;
 pub(crate) mod numbers;
 mod onboarding;
 mod portuguese;
@@ -327,6 +332,9 @@ pub(crate) fn tr(english: &str) -> &str {
             None => english,
         };
     }
+    if let Some(text) = groq_side::translate(column, english) {
+        return text;
+    }
     let table = match column {
         PORTUGUESE_COLUMN => portuguese::table(),
         FRENCH_COLUMN => french::table(),
@@ -403,7 +411,10 @@ pub(super) fn all_translations() -> impl Iterator<Item = &'static (&'static str,
         .iter()
         .chain(meetings::TRANSLATIONS)
         .chain(labs::TRANSLATIONS)
+        .chain(meeting_audio_source::TRANSLATIONS)
         .chain(meeting_mute::TRANSLATIONS)
+        .chain(confirm_cancel::TRANSLATIONS)
+        .chain(middle_mouse::TRANSLATIONS)
         .chain(style::TRANSLATIONS)
         .chain(signature::TRANSLATIONS)
         .chain(clipboard_phrase::TRANSLATIONS)
@@ -625,6 +636,7 @@ mod tests {
         include_str!("../rune_ui/fun.rs"),
         include_str!("../rune_ui/general.rs"),
         include_str!("../rune_ui/general/extra_shortcuts.rs"),
+        include_str!("../rune_ui/general/groq.rs"),
         include_str!("../rune_ui/general/page.rs"),
         include_str!("../rune_ui/find_popover.rs"),
         include_str!("../rune_ui/find_popover/catalog.rs"),
@@ -779,6 +791,45 @@ mod tests {
             }
         }
         assert!(checked > 300, "only {checked} translated strings found");
+    }
+
+    /// The refused-paste notice is looked up through a constant, not a `tr`
+    /// literal at its call site, so its table entry is checked here.
+    #[test]
+    fn the_refused_paste_notice_has_every_language() {
+        let table: std::collections::HashMap<_, _> = all_translations().copied().collect();
+        let translations = table
+            .get(crate::paste::POST_EVENT_REFUSED)
+            .expect("the refused paste notice is translated");
+        assert!(
+            translations
+                .iter()
+                .all(|translation| !translation.is_empty()),
+            "the refused paste notice is missing a language"
+        );
+    }
+
+    /// Labs › Confirm long cancels' notice is looked up through a constant
+    /// too.
+    #[test]
+    fn the_confirm_cancel_notice_has_every_language() {
+        let table: std::collections::HashMap<_, _> = all_translations().copied().collect();
+        let translations = table
+            .get(crate::dictation::cancel_confirm::NOTICE)
+            .expect("the confirm cancel notice is translated");
+        assert!(
+            translations
+                .iter()
+                .all(|translation| !translation.is_empty())
+        );
+        for language in [
+            super::french::table(),
+            super::portuguese::table(),
+            super::russian::table(),
+            super::hungarian::table(),
+        ] {
+            assert!(language.contains_key(crate::dictation::cancel_confirm::NOTICE));
+        }
     }
 
     /// The sound picker translates each set's name and character, which are
@@ -945,6 +996,48 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+    // The provider card's copy is shown on every OS and in every language.
+    #[test]
+    fn provider_copy_is_translated_in_every_table() {
+        let main: std::collections::HashMap<_, _> = all_translations().copied().collect();
+        let side = [
+            super::FRENCH_COLUMN,
+            super::PORTUGUESE_COLUMN,
+            super::RUSSIAN_COLUMN,
+            super::HUNGARIAN_COLUMN,
+        ];
+        let traditional = super::traditional_chinese::table();
+        for english in [
+            "Groq API key",
+            "Groq model",
+            "Whisper Large V3",
+            "Whisper Large V3 Turbo",
+            "Dictation provider",
+            "Local",
+            "Groq",
+            "Paste Groq key",
+            "Local is the default and runs Hex's on-device model only. Groq sends dictation audio to Groq and requires an API key.",
+            "Used only when Dictation provider is Groq and a key is set.",
+        ] {
+            assert!(
+                main.get(english)
+                    .is_some_and(|row| row.iter().all(|text| !text.is_empty())),
+                "the main table has no complete {english:?}"
+            );
+            for column in side {
+                assert!(
+                    super::groq_side::translate(column, english).is_some(),
+                    "column {column} has no {english:?}"
+                );
+            }
+            assert!(
+                traditional
+                    .get(english)
+                    .is_some_and(|text| !text.is_empty()),
+                "Traditional Chinese has no {english:?}"
+            );
         }
     }
 

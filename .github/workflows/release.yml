@@ -58,10 +58,6 @@ on:
         type: choice
         options: [check, dev, stable]
         default: check
-  push:
-    branches: [dev]
-    # Docs and the site alone cut no dev build.
-    paths-ignore: ["docs/**", "site/**", "**/*.md"]
 
 permissions:
   contents: read

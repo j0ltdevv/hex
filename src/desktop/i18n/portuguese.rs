@@ -15,6 +15,7 @@ pub(super) fn table() -> &'static HashMap<&'static str, &'static str> {
 
 #[rustfmt::skip]
 const TRANSLATIONS: &[(&str, &str)] = &[
+    ("macOS isn't letting Hex paste. Add Hex in System Settings > Privacy & Security > System & App Protection Override, then restart Hex.", "O macOS não está deixando o Hex colar. Adicione o Hex em Ajustes do Sistema > Privacidade e Segurança > Substituição da proteção do sistema e dos apps e reinicie o Hex."),
     ("Sent to", "Enviado para"),
     ("Nothing here yet", "Ainda não há nada aqui"),
     ("Dictations, annotations, and captures show here.", "Os ditados, as anotações e as capturas aparecem aqui."),
@@ -139,7 +140,6 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("The mic opens only while you dictate; the first moment can be clipped", "O microfone abre só enquanto você dita; o primeiro instante pode ser cortado"),
     ("The mic stays ready so dictation starts instantly; your system shows it in use", "O microfone fica pronto para o ditado começar na hora; o sistema mostra que ele está em uso"),
     ("Hex can't listen until the speech model has downloaded", "O Hex não pode ouvir até o modelo de voz terminar de baixar"),
-    ("Don't switch", "Não trocar"),
     ("Your desktop assigns this key itself, so Hex can't confirm it", "Seu ambiente de trabalho atribui essa tecla por conta própria, então o Hex não pode confirmá-la"),
     ("Not installed", "Não instalado"),
     ("Switch model with keyboard language", "Trocar modelo com o idioma do teclado"),
@@ -411,7 +411,6 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Recommended", "Recomendado"),
     ("Settings", "Ajustes"),
     ("General", "Geral"),
-    ("Experiments", "Experimentos"),
     ("Voice Filter", "Filtro de voz"),
     ("Recordings", "Gravações"),
     ("Advanced", "Avançado"),
@@ -438,15 +437,17 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Add correction", "Adicionar correção"),
     ("Vocabulary", "Vocabulário"),
     ("Names and terms", "Nomes e termos"),
-    ("Transcription and rewriting spell them right, and search finds them when misheard", "A transcrição e a reescrita os escrevem certo, e a busca os encontra quando são mal ouvidos"),
-    ("Terms with spaces match only when said in full", "Termos com espaços só correspondem quando ditos por inteiro"),
+    ("Names and words Hex should spell right. Phrases match only when said in full.", "Nomes e palavras que o Hex deve escrever certo. Frases só correspondem quando ditas por inteiro."),
+    ("Spell as", "Escrever como"),
+    ("Misheard as", "Ouvido errado como"),
+    ("optional", "opcional"),
+    ("e.g. cappuccino", "ex.: cappuccino"),
+    ("e.g. capuchin, cap a chino", "ex.: capuchin, cap a chino"),
     ("Light", "Leve"),
     ("Strong", "Forte"),
     ("Add term", "Adicionar termo"),
     ("1 term", "1 termo"),
     ("{} terms", "{} termos"),
-    ("Term (e.g. cappuccino)", "Termo (ex.: cappuccino)"),
-    ("Sounds like (e.g. capuchin, cap a chino)", "Soa como (ex.: capuchin, cap a chino)"),
     ("Up to 16 spellings per term are saved, and 64 characters per term or spelling.", "São salvas até 16 grafias por termo e 64 caracteres por termo ou grafia."),
     ("Import…", "Importar…"),
     ("Export…", "Exportar…"),
@@ -540,11 +541,6 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Delete", "Excluir"),
     ("Remove", "Remover"),
     ("Dictation", "Ditado"),
-    ("Groq API key", "Chave de API do Groq"),
-    ("Groq model", "Modelo do Groq"),
-    ("Whisper Large V3", "Whisper Large V3"),
-    ("Whisper Large V3 Turbo", "Whisper Large V3 Turbo"),
-    ("Dictation provider", "Provedor de ditado"),
     ("Send", "Enviar"),
     ("Printed", "Impresso"),
     ("Raw", "Sem processamento"),
@@ -824,6 +820,7 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Context", "Contexto"),
     ("Current context", "Contexto atual"),
     ("None", "Nenhum"),
+    ("Don't switch", "Não trocar"),
     ("Keyboard", "Teclado"),
     ("Browser navigation", "Navegação do navegador"),
     ("Application navigation", "Navegação do aplicativo"),
@@ -1493,6 +1490,8 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Stop every call recording when the call ends", "Parar toda gravação de chamada quando a chamada termina"),
     ("Also stop an offered, calendar, or by-hand call recording 30 s after its call app leaves the microphone, even with Stop when the call ends off", "Também para uma gravação iniciada por oferta, pelo calendário ou à mão 30 s depois que o app da chamada deixa o microfone, mesmo com «Parar quando a chamada terminar» desligado"),
     ("Also stop an offered or by-hand call recording 30 s after its call app leaves the microphone, even with Stop when the call ends off", "Também para uma gravação iniciada por oferta ou à mão 30 s depois que o app da chamada deixa o microfone, mesmo com «Parar quando a chamada terminar» desligado"),
+    ("Indicator on any display", "Indicador em qualquer tela"),
+    ("Drag the meeting recording indicator to another display and it stays there", "Arraste o indicador de gravação de reunião para outra tela e ele fica lá"),
 ];
 
 #[cfg(test)]
@@ -1504,7 +1503,12 @@ mod tests {
         let portuguese = super::table();
         let missing: Vec<&str> = super::super::all_translations()
             .map(|(english, _)| *english)
-            .filter(|english| portuguese.get(english).is_none_or(|text| text.is_empty()))
+            .filter(|english| {
+                let translated = portuguese.get(*english).copied().or_else(|| {
+                    super::super::groq_side::translate(super::super::PORTUGUESE_COLUMN, *english)
+                });
+                translated.is_none_or(|text| text.is_empty())
+            })
             .collect();
         assert!(missing.is_empty(), "no Portuguese for {missing:?}");
     }

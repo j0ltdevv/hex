@@ -14,7 +14,7 @@ fi
 
 target_dir=${CARGO_TARGET_DIR:-"$root/target"}
 cargo build --locked --release --manifest-path "$root/Cargo.toml"
-version=$("$target_dir/release/hex" --version | awk 'NF { value=$NF } END { print value }')
+version=$("$target_dir/release/hex" --version | awk 'match($0, /hex [0-9]+\.[0-9]+\.[0-9]+/) { print substr($0, RSTART + 5, RLENGTH - 5); exit }')
 
 HEX_INSTALL_SOURCE=1 \
 HEX_INSTALL_ARTIFACT="$target_dir/release/hex" \

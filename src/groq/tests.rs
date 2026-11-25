@@ -196,6 +196,14 @@ fn key_file_is_owner_only_and_never_yields_a_world_readable_key() {
         assert_eq!(read_key_file(&path), None);
         fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
         assert_eq!(read_key_file(&path), None);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let link = dir.path().join("groq.key.link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert_eq!(
+            read_key_file(&link),
+            None,
+            "a symlink must not yield the key it points to"
+        );
     }
 
     assert_eq!(read_key_file(&dir.path().join("missing.key")), None);
@@ -350,16 +358,12 @@ fn absent_language_and_prompt_are_not_sent_as_empty_fields() {
 }
 
 #[test]
-fn a_400_415_or_422_retries_once_with_wav_and_keeps_all_fields() {
+fn a_415_or_422_retries_once_with_wav_and_keeps_all_fields() {
     let flac = flac::encode(SAMPLES);
     let wav = wav(SAMPLES);
     assert_ne!(flac, wav, "the retry must change the encoded audio");
 
-    for status in [
-        "400 Bad Request",
-        "415 Unsupported Media Type",
-        "422 Unprocessable Entity",
-    ] {
+    for status in ["415 Unsupported Media Type", "422 Unprocessable Entity"] {
         let (endpoint, server) = mock_server(&[
             (status, r#"{"error":{"message":"unsupported audio"}}"#),
             ("200 OK", success_json()),
@@ -401,6 +405,7 @@ fn other_http_failures_and_a_failed_wav_retry_are_not_retried_again() {
     let agent = crate::net::loopback_agent(|config| config);
 
     for status in [
+        "400 Bad Request",
         "401 Unauthorized",
         "429 Too Many Requests",
         "500 Internal Server Error",
@@ -417,7 +422,10 @@ fn other_http_failures_and_a_failed_wav_retry_are_not_retried_again() {
     }
 
     let (endpoint, server) = mock_server(&[
-        ("400 Bad Request", r#"{"error":{"message":"no flac"}}"#),
+        (
+            "415 Unsupported Media Type",
+            r#"{"error":{"message":"no flac"}}"#,
+        ),
         (
             "422 Unprocessable Entity",
             r#"{"error":{"message":"no wav"}}"#,
@@ -495,7 +503,10 @@ fn cancellation_before_a_request_skips_the_request_entirely() {
 fn cancellation_during_a_failed_attempt_prevents_the_wav_retry() {
     let cancel = Cancellation::new();
     let (endpoint, server) = mock_server_cancelling(
-        &[("400 Bad Request", r#"{"error":{"message":"no flac"}}"#)],
+        &[(
+            "415 Unsupported Media Type",
+            r#"{"error":{"message":"no flac"}}"#,
+        )],
         cancel.clone(),
     );
     let agent = crate::net::loopback_agent(|config| config);
@@ -507,6 +518,204 @@ fn cancellation_during_a_failed_attempt_prevents_the_wav_retry() {
     assert!(!error.contains(TEST_KEY));
     assert!(cancel.is_cancelled(), "clones share the cancellation flag");
     assert_eq!(server.join().unwrap().len(), 1, "no retry after cancel");
+}
+
+fn pending_with(
+    reply: Option<Result<String, String>>,
+    cancel: CancelToken,
+    closing_mark_required: bool,
+) -> PendingGroq {
+    let (sender, receiver) = mpsc::channel();
+    match reply {
+        Some(reply) => sender.send(reply).unwrap(),
+        None => drop(sender),
+    }
+    PendingGroq {
+        reply: receiver,
+        cancel,
+        closing_mark_required,
+    }
+}
+
+#[test]
+fn settle_accepts_cloud_text_and_reports_the_cloud_provider() {
+    let pending = pending_with(Some(Ok("cloud".into())), CancelToken::new(), false);
+    let settled = pending.settle("local", |text| Ok(format!("{text}!")));
+    assert_eq!(
+        settled,
+        Settled {
+            value: "cloud!".into(),
+            cloud_used: true,
+        }
+    );
+}
+
+#[test]
+fn settle_keeps_local_text_on_cloud_error_rejection_and_disconnect() {
+    for reply in [
+        Some(Err("cloud failed".into())),
+        Some(Ok("rejected".into())),
+        None,
+    ] {
+        let pending = pending_with(reply, CancelToken::new(), false);
+        let settled = pending.settle("local", |text| {
+            (text != "rejected")
+                .then_some(text)
+                .ok_or_else(|| "bad cloud text".into())
+        });
+        assert_eq!(
+            settled,
+            Settled {
+                value: "local".into(),
+                cloud_used: false,
+            }
+        );
+    }
+}
+
+#[test]
+fn settle_refuses_cloud_text_queued_before_cancellation() {
+    let cancel = CancelToken::new();
+    let pending = pending_with(Some(Ok("cloud".into())), cancel.clone(), false);
+    cancel.cancel();
+    let settled = pending.settle("local", |text| Ok(text));
+    assert_eq!(settled.value, "local");
+    assert!(!settled.cloud_used);
+}
+
+#[test]
+fn a_failed_local_run_still_settles_an_already_started_cloud_job() {
+    let pending = pending_with(Some(Ok("cloud".into())), CancelToken::new(), false);
+    let settled = settle_local(Some(pending), Err("local failed".to_owned()), |text| {
+        Ok(text)
+    });
+    assert_eq!(
+        settled,
+        Settled {
+            value: Ok("cloud".into()),
+            cloud_used: true,
+        }
+    );
+
+    // A rejected cloud result keeps the original local error, and the
+    // closing-mark rule captured with the job still applies.
+    let pending = pending_with(Some(Ok("cloud".into())), CancelToken::new(), true);
+    let settled = settle_local(Some(pending), Err("local failed".to_owned()), |text| {
+        crate::transcription::engine::accept_cloud_text(text, true)
+    });
+    assert_eq!(settled.value, Err("local failed".to_owned()));
+    assert!(!settled.cloud_used);
+
+    // A failed cloud result is cancelled before the local error propagates.
+    let cancel = CancelToken::new();
+    let pending = pending_with(Some(Err("cloud failed".into())), cancel.clone(), false);
+    let settled = settle_local(Some(pending), Err("local failed".to_owned()), |text| {
+        Ok(text)
+    });
+    assert_eq!(settled.value, Err("local failed".to_owned()));
+    assert!(cancel.is_cancelled());
+
+    let cancel = CancelToken::new();
+    cancel.cancel();
+    let pending = pending_with(Some(Ok("cloud".into())), cancel, false);
+    let settled = settle_local(Some(pending), Err("local failed".to_owned()), |text| {
+        Ok(text)
+    });
+    assert_eq!(settled.value, Err("local failed".to_owned()));
+    assert!(!settled.cloud_used);
+
+    let settled = settle_local::<&str>(None, Err("local failed"), |text| Ok(text));
+    assert_eq!(settled.value, Err("local failed"));
+    assert!(!settled.cloud_used);
+}
+
+#[test]
+fn dropping_a_rejected_pending_job_cancels_the_worker() {
+    let cancel = CancelToken::new();
+    let pending = pending_with(None, cancel.clone(), false);
+    drop(pending);
+    assert!(cancel.is_cancelled());
+}
+
+#[test]
+fn the_key_is_snapshotted_when_the_cloud_job_starts() {
+    let request = || OwnedGroqRequest::new(SAMPLES.to_vec(), None, None, GroqModel::LargeV3);
+    let cancel = CancelToken::new();
+    assert!(PendingGroq::start_with_key(Some(request()), None, cancel.clone(), false).is_none());
+    assert!(!cancel.is_cancelled(), "no key means no cloud job at all");
+    // `spawn` uses the snapshot, not a later lookup: an empty snapshot
+    // fails configuration before any request can be sent.
+    let receiver = spawn(request(), GroqApiKey::default(), CancelToken::new());
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_secs(2)),
+        Ok(Err(error)) if error.contains("key is empty")
+    ));
+
+    // Pre-cancelled so the spawned worker cannot reach the network.
+    let cancel = CancelToken::new();
+    cancel.cancel();
+    let pending = PendingGroq::start_with_key(
+        Some(request()),
+        Some(GroqApiKey::from(TEST_KEY)),
+        cancel,
+        true,
+    )
+    .unwrap();
+    assert!(pending.closing_mark_required());
+    assert_eq!(pending.settle("local", |text| Ok(text)).value, "local");
+}
+
+#[test]
+fn closing_mark_rule_comes_from_the_captured_model_selection() {
+    let selection = crate::transcription::models::TranscriptionSelection::default();
+    assert!(closing_mark_required(Some(&selection)));
+    assert!(!closing_mark_required(None));
+}
+
+#[test]
+fn boundaries_are_fresh_for_each_request() {
+    let boundary = boundary();
+    assert!(boundary.starts_with("hex-groq-"));
+    assert_eq!(boundary.len(), "hex-groq-".len() + 32);
+    assert!(
+        boundary["hex-groq-".len()..]
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    );
+}
+
+#[test]
+fn hostile_prompt_and_language_cannot_inject_multipart_fields() {
+    let prompt = "Camille\r\n--hex-groq-dictation\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\ninjected";
+    let language = "fr\r\n--hex-groq-dictation\r\nContent-Disposition: form-data; name=\"file\"";
+    let (endpoint, server) = mock_server(&[("200 OK", success_json())]);
+    let agent = crate::net::loopback_agent(|config| config);
+    let key = GroqApiKey::from(TEST_KEY);
+    let request = GroqRequest::new(SAMPLES, Some(language), Some(prompt), GroqModel::Turbo);
+
+    let text =
+        transcribe_with_retry(&agent, &endpoint, &key, request, &Cancellation::new()).unwrap();
+    assert_eq!(text, TRANSCRIPT);
+
+    let requests = server.join().unwrap();
+    assert_eq!(requests.len(), 1);
+    let content_type = requests[0].header("content-type").unwrap();
+    let boundary = content_type
+        .strip_prefix("multipart/form-data; boundary=")
+        .unwrap();
+    assert!(
+        !boundary.contains("hex-groq-dictation"),
+        "the old fixed boundary must not be reused"
+    );
+    assert_upload(
+        &requests[0],
+        GroqModel::Turbo,
+        Some(language),
+        Some(prompt),
+        "dictation.flac",
+        "audio/flac",
+        &flac::encode(SAMPLES),
+    );
 }
 
 #[test]

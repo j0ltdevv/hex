@@ -30,6 +30,7 @@ use crate::desktop::onboarding::PermissionKind;
 use crate::transcription::models as transcription_models;
 
 pub(super) mod groq;
+mod model_switch;
 mod page;
 mod shortcuts;
 
@@ -74,6 +75,11 @@ pub(super) fn basics(ui: &Ui, p: Paint, layer: &mut Vec<El>) -> Option<El> {
                 ShortcutTarget::SecondDictation,
                 Some(tr("Dictates like the shortcut above")),
             ));
+        }
+        // Labs › Model switch shortcut: one key that swaps dictation to the
+        // other speech model and language, and back.
+        if crate::labs::Feature::ModelSwitchShortcut.on(&ui.settings) {
+            rows.extend(model_switch::rows(ui, p, layer));
         }
         // Labs › More dictation shortcuts (macOS): up to four more keys that
         // each dictate like the one above, each with its own shortcut mode.

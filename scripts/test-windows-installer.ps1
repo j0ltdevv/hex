@@ -10,13 +10,16 @@
 # -SignedEngine checks the installed uninstaller's Authenticode signature, its
 # timestamp, and that the release publisher signed it (Release signs the setup
 # engine; Test builds do not sign it).
+# -ExpectedSigner checks installed hex.exe/hex.com the same way before their
+# version probes; leave it out only for unsigned local test builds.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string]$Installer,
     [Parameter(Mandatory)] [string]$Executable,
     [string]$Console,
     [Parameter(Mandatory)] [string]$Version,
-    [switch]$SignedEngine
+    [switch]$SignedEngine,
+    [string]$ExpectedSigner
 )
 $ErrorActionPreference = 'Stop'
 
@@ -37,6 +40,16 @@ function Check([bool]$condition, [string]$message) {
     Write-Output "ok - $message"
 }
 
+# Mirror the installer's fail-closed probe check when a signed release is under
+# test. Unsigned local test builds pass no -ExpectedSigner and skip this.
+function Assert-InstalledSignature([string]$path, [string]$label) {
+    if ([string]::IsNullOrWhiteSpace($ExpectedSigner)) { return }
+    $signature = Get-AuthenticodeSignature -LiteralPath $path
+    Check ($signature.Status -eq 'Valid') "$label has a valid Authenticode signature ($($signature.Status))"
+    $subject = [string]$signature.SignerCertificate.Subject
+    Check (-not [string]::IsNullOrWhiteSpace($subject) -and $subject.IndexOf($ExpectedSigner, [StringComparison]::OrdinalIgnoreCase) -ge 0) "$label is signed by $ExpectedSigner ($subject)"
+}
+
 function Run-Setup([string]$name) {
     $process = Start-Process $Installer -Wait -PassThru -ArgumentList @(
         '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$logs\$name.log"
@@ -50,6 +63,7 @@ $expected = (Get-FileHash -Algorithm SHA256 $Executable).Hash
 Check ((Run-Setup 'install') -eq 0) 'silent install exits 0'
 Check (Test-Path $installed) "hex.exe is at versions\$Version"
 Check ((Get-FileHash -Algorithm SHA256 $installed).Hash -eq $expected) 'installed hex.exe matches the release bytes'
+Assert-InstalledSignature $installed 'installed hex.exe'
 Check ((Get-Content $pointer -Raw).Trim() -eq $Version) "current-version names $Version"
 $installReceipt = Get-Content $receipt -Raw | ConvertFrom-Json
 Check ($installReceipt.app -eq 'hex' -and $installReceipt.artifact -eq 'desktop' -and $installReceipt.channel -eq 'stable' -and $installReceipt.method -eq 'direct') 'install.json marks a direct install of hex desktop stable'
@@ -91,6 +105,7 @@ if ($Console) {
     $expectedConsole = (Get-FileHash -Algorithm SHA256 $Console).Hash
     Check (Test-Path $installedConsole) "hex.com is beside hex.exe at versions\$Version"
     Check ((Get-FileHash -Algorithm SHA256 $installedConsole).Hash -eq $expectedConsole) 'installed hex.com matches the release bytes'
+    Assert-InstalledSignature $installedConsole 'installed hex.com'
     Check ((Get-FileHash -Algorithm SHA256 (Join-Path $bin 'hex.com')).Hash -eq $expectedConsole) 'bin\hex.com matches the release bytes'
     Check (Path-Has $bin) 'bin is on the user''s PATH'
     # hex.com is a console program, so PowerShell waits for it, prints or

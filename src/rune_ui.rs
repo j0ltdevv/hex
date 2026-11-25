@@ -464,7 +464,10 @@ pub(crate) fn show(ui: &mut Ui, destination: Destination, tx: &mut Tx) {
             ui.meetings.select(id);
         }
         #[cfg(hex_capture)]
-        Destination::RoutingRules => scrawl::routing_rules::open(ui),
+        Destination::RoutingRules => {
+            ui.captures.view = scrawl::View::Settings;
+            scrawl::routing_rules::open(ui);
+        }
         _ => {}
     }
 }
@@ -681,7 +684,7 @@ pub(crate) struct Ui {
     build_preview: Option<BuildKind>,
     /// A scene showing the Paste Last picker over the window.
     #[cfg(all(target_os = "macos", hex_capture))]
-    paste_preview: bool,
+    paste_preview: paste_picker::Preview,
     capture: Capture,
     vocabulary: vocabulary::VocabularyEditor,
     /// The model the service was last seen preparing, and since when.
@@ -701,6 +704,8 @@ pub(crate) struct Ui {
     /// the hex link, read when the pane opens and after an install.
     #[cfg(hex_capture)]
     agents: scrawl::Agents,
+    #[cfg(all(hex_capture, not(target_os = "macos")))]
+    capture_folder: Option<crate::desktop::file_dialog::Pending>,
     modes: modes::ModesPane,
     output: output::OutputPane,
     picker: picker::Picker,
@@ -710,6 +715,8 @@ pub(crate) struct Ui {
     sound_sets: sound_sets::SoundSets,
     /// Meetings › Settings' Calls sheet and the calls Hex has seen.
     calls: calls::Calls,
+    /// Meetings › Computer audio's app and output lists (Labs).
+    meeting_audio: meetings::audio_source::Listing,
     #[cfg(hex_capture)]
     routing: scrawl::routing_rules::Routing,
     tour: Option<onboarding::Tour>,
@@ -737,7 +744,6 @@ pub(crate) struct Ui {
 struct Drafts {
     modes: bool,
     vocabulary: bool,
-    groq_api_key: bool,
     labs: labs::LabDrafts,
 }
 
@@ -797,10 +803,10 @@ impl Ui {
     }
 
     fn with(settings: AppSettings, service: Service) -> Self {
-        let modes = modes::ModesPane::new(&settings);
-        let vocabulary = vocabulary::VocabularyEditor::new(&settings.vocabulary);
-        let groq_api_key = general::groq::draft(&settings.groq_api_key);
         Self {
+            vocabulary: vocabulary::VocabularyEditor::new(&settings.vocabulary),
+            modes: modes::ModesPane::new(&settings),
+            groq_api_key: general::groq::draft(&settings.groq_api_key),
             settings,
             #[cfg(test)]
             preferred_language: None,
@@ -826,12 +832,10 @@ impl Ui {
             screenshot_folder: labs::screenshots::FolderChoice::default(),
             build_preview: None,
             #[cfg(all(target_os = "macos", hex_capture))]
-            paste_preview: false,
+            paste_preview: paste_picker::Preview::default(),
             capture: Capture::Idle,
-            vocabulary,
             preparing: None,
             draft_since: None,
-            groq_api_key,
             duck_volume_drag: None,
             models: models::Models::default(),
             history: history::HistoryPane::default(),
@@ -840,13 +844,15 @@ impl Ui {
             captures: captures::CapturesPane::default(),
             #[cfg(hex_capture)]
             agents: scrawl::Agents::default(),
-            modes,
+            #[cfg(all(hex_capture, not(target_os = "macos")))]
+            capture_folder: None,
             output: output::OutputPane::default(),
             picker: picker::Picker::default(),
             found: found::FoundState::default(),
             explainer: explainer::Explainer::default(),
             sound_sets: sound_sets::SoundSets::default(),
             calls: calls::Calls::default(),
+            meeting_audio: meetings::audio_source::Listing::default(),
             #[cfg(hex_capture)]
             routing: scrawl::routing_rules::Routing::default(),
             tour: None,
@@ -956,7 +962,6 @@ impl Ui {
         Drafts {
             modes: modes.dictation_processing != settings.dictation_processing,
             vocabulary: self.vocabulary.project() != settings.vocabulary,
-            groq_api_key: general::groq::differs(self, &settings.groq_api_key),
             labs: self.lab_store.drafts(settings),
         }
     }
@@ -1142,9 +1147,7 @@ impl Ui {
             if !drafts.vocabulary && service.vocabulary != self.settings.vocabulary {
                 self.vocabulary.reload(&service.vocabulary);
             }
-            if !drafts.groq_api_key && service.groq_api_key != self.settings.groq_api_key {
-                general::groq::set_draft(self, &service.groq_api_key);
-            }
+            general::groq::follow_saved(self, &service.groq_api_key);
             // A lab field follows its lab and its saved text: only a saved
             // text that actually changed may reset the field, so any other
             // external save leaves its focus and caret alone. A lab toggled
@@ -1216,8 +1219,6 @@ impl Ui {
     /// Switches panes at once: the new pane replaces the old without a fade,
     /// already at rest (a grant's morph doesn't replay).
     fn select_pane(&mut self, pane: Pane, tx: &mut Tx) {
-        #[cfg(all(target_os = "macos", hex_capture))]
-        let pane = history::unified::destination(self, pane);
         let labs = std::mem::take(&mut self.labs_open);
         if self.pane == pane && !labs {
             return;
@@ -1390,7 +1391,7 @@ fn poll(ui: &mut Ui, clock: f64, tx: &mut Tx) -> bool {
     );
     changed |= history::poll(ui);
     #[cfg(hex_capture)]
-    let mut changed = ui.captures.poll(ui.pane == Pane::Captures && !ui.labs_open) | changed;
+    let mut changed = scrawl::poll_list(ui) | changed;
     #[cfg(all(target_os = "macos", hex_capture))]
     {
         changed |= history::unified::poll(ui);
@@ -1413,6 +1414,7 @@ fn poll(ui: &mut Ui, clock: f64, tx: &mut Tx) -> bool {
     changed |= modes::poll_chooser(ui);
     changed |= model_import::poll(ui);
     changed |= meetings::poll_import(ui);
+    changed |= meetings::audio_source::poll(ui, clock);
     changed |= vocabulary::poll(ui);
     // Labs › Screenshots' folder chooser, on macOS.
     #[cfg(all(target_os = "macos", hex_capture))]
@@ -1546,8 +1548,6 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
         ),
         Pane::Modes => modes::pane(ui, p, &mut layer),
         Pane::History => history::pane(ui, p, &mut layer),
-        #[cfg(hex_capture)]
-        Pane::Captures => (Vec::new(), captures::pane(ui, p)),
         Pane::Meetings => meetings::pane(ui, p, &mut layer),
         #[cfg(hex_capture)]
         Pane::Annotate => (Vec::new(), scrawl::pane(ui, p, &mut layer)),
@@ -1580,9 +1580,12 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
             if ui.labs_open {
                 Some(labs::search_field(ui, p))
             } else {
-                (ui.pane == Pane::Meetings)
-                    .then(|| meetings::view_switch(ui, p))
-                    .flatten()
+                match ui.pane {
+                    Pane::Meetings => meetings::view_switch(ui, p),
+                    #[cfg(hex_capture)]
+                    Pane::Annotate => scrawl::view_switch(ui, p),
+                    _ => None,
+                }
             },
             actions,
         ))
@@ -1611,9 +1614,7 @@ fn view(ui: &Ui, cx: &mut Cx<Ui>) -> El {
         None => {}
     }
     #[cfg(all(target_os = "macos", hex_capture))]
-    if ui.paste_preview {
-        layer.push(paste_picker::preview(p));
-    }
+    layer.extend(paste_picker::preview(&ui.paste_preview, p));
     if let Some(first_run) = onboarding_kit::live::overlay(ui, p, cx.is_reduced_motion()) {
         layer.push(first_run);
     }

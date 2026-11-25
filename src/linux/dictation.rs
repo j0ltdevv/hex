@@ -129,6 +129,8 @@ impl Drop for OutputWorker {
 /// dictation records, so changing one never stops listening.
 pub(crate) enum ListenerUpdate {
     Settings(Box<AppSettings>),
+    /// A model switch failed; show it beside the HUD (Labs › Failure notices).
+    Notice(String),
     /// A model the host prepared, swapped in once no transcription is pending.
     Transcriber {
         selection: crate::transcription::models::TranscriptionSelection,
@@ -307,17 +309,20 @@ pub(crate) fn run(
             let started = Instant::now();
             let mut stop_phrase_only = false;
             let result = (|| -> Result<String> {
-                let transcribed = job.transcript.wait().map_err(|error| eyre!(error))?;
-                let text = crate::groq::settle_option(job.groq.take(), &transcribed.text, |text| {
-                    transcribed.accept_cloud_text(text)
-                });
+                let settled = crate::groq::settle_transcript(
+                    job.groq.take(),
+                    job.transcript.wait(),
+                    crate::transcription::engine::accept_cloud_text,
+                );
                 let inference_ms = started.elapsed().as_millis() as u64;
                 tracing::info!(
-                    source = transcribed.source.label(),
-                    finish_ms = transcribed.finish_ms,
+                    source = settled.source.as_str(),
+                    provider = if settled.cloud_used { "groq" } else { "local" },
+                    finish_ms = settled.finish_ms,
                     audio_ms = job.audio_ms,
                     "transcribed Linux dictation"
                 );
+                let text = settled.value.map_err(|error| eyre!(error))?;
                 use crate::dictation::modes::output::{
                     EMPTY_TRANSCRIPT_ERROR, InsertPlan, InsertResult, OutputTarget,
                     PreparedTranscript, prepare_transcript,
@@ -524,6 +529,7 @@ pub(crate) fn run(
         for update in updates.try_iter() {
             match update {
                 ListenerUpdate::Settings(next) => next_settings = Some(*next),
+                ListenerUpdate::Notice(message) => indicator.failed(message),
                 ListenerUpdate::Transcriber {
                     selection,
                     transcriber,
@@ -925,6 +931,17 @@ pub(crate) fn run(
                             return Err(eyre!("dictation worker is unavailable"));
                         }
                     }
+                }
+                // Labs › Model switch shortcut: ask the host that owns model
+                // preparation to swap, installed only. A capture, an accepted
+                // job, or a client's dictation keeps the model it started with.
+                HotkeyEvent::ModelSwitch
+                    if !capture.is_recording()
+                        && !start_pending
+                        && finishing.is_none()
+                        && !service.is_active() =>
+                {
+                    crate::transcription::other_model::request();
                 }
                 HotkeyEvent::Cancel if capture.is_recording() => {
                     capture.cancel();
@@ -1416,30 +1433,20 @@ fn submit_capture(
             let stream = clip.take_stream();
             let samples = clip.into_transcription_samples();
             let recording = crate::history::Recording::keep(&samples);
-            let language = engine
+            let selection = engine
                 .held_selection()
-                .unwrap_or_else(|| crate::app_settings::transcription_selection().1)
-                .language;
-            let groq_request =
-                (crate::groq::speech_provider() == crate::groq::SpeechProvider::Groq).then(|| {
-                    let prompt = crate::dictation::vocabulary::for_dictation(|| {
-                        crate::dictation::vocabulary::transcription_prompt(500)
-                    });
-                    crate::groq::OwnedGroqRequest::new(
-                        samples.clone(),
-                        Some(language.clone()),
-                        prompt,
-                        crate::groq::groq_model(),
-                    )
-                });
+                .unwrap_or_else(|| crate::app_settings::transcription_selection().1);
+            let closing_mark_required = crate::groq::closing_mark_required(Some(&selection));
+            let groq_request = crate::groq::request_for_dictation(&samples, &selection);
             let transcript = engine.finish(stream, samples)?;
-            let groq = PendingGroq::start(groq_request, transcript.cancel_token());
+            let cancel = transcript.cancel_token();
+            let groq = PendingGroq::start(groq_request, cancel, closing_mark_required);
             let job = OutputJob::Dictation(Box::new(Job {
                 transcript,
                 groq,
                 context,
                 audio_ms,
-                language,
+                language: selection.language,
                 recording,
                 print,
                 flavour,

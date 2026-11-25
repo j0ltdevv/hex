@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Installation and troubleshooting
-    url: https://anoma.ly/hex/
-    about: Download the macOS app, check permissions, and find troubleshooting steps.
-  - name: Linux beta requirements
-    url: https://github.com/anomalyco/hex/blob/dev/docs/linux.md
-    about: Check supported X11/Wayland environments and installation requirements.
-  - name: Security vulnerabilities
-    url: https://github.com/anomalyco/hex/blob/dev/SECURITY.md
-    about: Follow the security reporting instructions rather than opening a public issue.
+  - name: Build and troubleshooting notes (this fork)
+    url: https://github.com/j0ltdevv/hex#readme
+    about: Build from source in this unofficial fork; no fork binaries are published.
+  - name: Linux requirements (this fork)
+    url: https://github.com/j0ltdevv/hex/blob/dev/docs/linux.md
+    about: Check supported X11/Wayland environments and Hyprland shortcuts.
+  - name: Security vulnerabilities (this fork)
+    url: https://github.com/j0ltdevv/hex/blob/dev/SECURITY.md
+    about: Use private reporting; never paste keys or unredacted logs in a public issue.

@@ -4,7 +4,7 @@ version = "3.4.0"
 edition = "2024"
 default-run = "hex"
 license = "MIT"
-repository = "https://github.com/anomalyco/hex"
+repository = "https://github.com/j0ltdevv/hex"
 
 # Crates imported from Scrawl live under `crates/`. Plain `cargo build` and
 # `cargo test` still select only Hex; pass `--workspace` or `-p` for the others.
@@ -191,7 +191,7 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
-windows = { version = "0.62.2", features = ["Media_Control", "Foundation", "Foundation_Collections", "Win32_Foundation", "Win32_Media_Audio", "Win32_Security", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Ole", "Win32_System_Threading", "Win32_System_Variant", "Win32_UI_Accessibility"] }
+windows = { version = "0.62.2", features = ["Media_Control", "Foundation", "Foundation_Collections", "Win32_Foundation", "Win32_Media_Audio", "Win32_Security", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Ole", "Win32_System_Threading", "Win32_System_Variant", "Win32_UI_Accessibility"] }
 windows-core = "0.62.2"
 windows-future = "0.3.2"
 
