@@ -1,5 +1,7 @@
 # Hex — j0ltdevv fork (unofficial)
 
+<a href="https://opencode.ai"><picture><source media="(prefers-color-scheme: dark)" srcset="https://opencode.ai/brand/badges/opencode-built-with-g-dark-20.svg"><img alt="Built with OpenCode" src="https://opencode.ai/brand/badges/opencode-built-with-g-light-20.svg" height="20" /></picture></a>
+
 This is an **unofficial fork** of [Hex](https://github.com/anomalyco/hex),
 maintained at [j0ltdevv/hex](https://github.com/j0ltdevv/hex). It is not
 affiliated with, endorsed by, or supported by Anomaly Innovations. The upstream
