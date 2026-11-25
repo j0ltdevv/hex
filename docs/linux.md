@@ -595,6 +595,30 @@ mode. In the Hold modes there is no cancel: every dictation finishes and pastes.
 On KDE, Hex removes the Cancel dictation shortcut older builds asked for,
 so its key returns to your applications.
 
+### Hold-to-dictate on Hyprland with commands
+
+The GlobalShortcuts portal is not universal: Hyprland names its shortcuts but
+leaves every key unbound, and some desktops have no portal at all. Bind Hex's
+own commands in Hyprland's Lua config for a press-to-start / release-to-stop
+hold that does not depend on the portal's release event:
+
+```lua
+-- Prefer an unmodified key: Hyprland 0.56 can drop a release when a modifier
+-- comes up before the key. Shortcut mode may stay on Hold.
+hl.bind("End", hl.dsp.exec_cmd("hex dictation start"), { transparent = true })
+hl.bind("End", hl.dsp.exec_cmd("hex dictation stop"), { release = true, transparent = true })
+-- On a desktop that only reports presses, use one key to toggle instead:
+hl.bind("F10", hl.dsp.exec_cmd("hex dictation toggle"))
+```
+
+In traditional `hyprland.conf` syntax the pair is
+`bind = , End, exec, hex dictation start` and
+`bindr = , End, exec, hex dictation stop`. These commands talk to the running
+listener (`hex start` or `hex service`); they do not start it. Start locks the
+recording and stop finishes it, bypassing Hold, Toggle, and double-tap, and a
+shortcut press can also finish a recording that a command started. `hyprctl
+globalshortcuts` lists portal shortcuts only; command binds need no portal.
+
 Shortcuts need a non-modifier key. Modifier-only shortcuts, such as Super
 alone, are not supported on Linux.
 

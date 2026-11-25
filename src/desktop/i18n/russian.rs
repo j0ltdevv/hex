@@ -534,11 +534,11 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Delete", "Удалить"),
     ("Remove", "Убрать"),
     ("Dictation", "Диктовка"),
-    ("Groq API key", "Ключ API Groq"),
-    ("Groq model", "Модель Groq"),
-    ("Whisper Large V3", "Whisper Large V3"),
-    ("Whisper Large V3 Turbo", "Whisper Large V3 Turbo"),
-    ("Dictation provider", "Поставщик диктовки"),
+    ("Local", "Локальный"),
+    ("Groq", "Groq"),
+    ("Paste Groq key", "Вставить ключ Groq"),
+    ("Local is the default and runs Hex's on-device model only. Groq sends dictation audio to Groq and requires an API key.", "Локальный режим используется по умолчанию и задействует только модель Hex на устройстве. Groq отправляет аудио диктовки в Groq и требует ключ API."),
+    ("Used only when Dictation provider is Groq and a key is set.", "Используется только когда поставщик диктовки — Groq и задан ключ."),
     ("Send", "Отправить"),
     ("Printed", "Выведено"),
     ("Raw", "Без обработки"),
@@ -1507,7 +1507,12 @@ mod tests {
         let russian = super::table();
         let missing: Vec<&str> = super::super::all_translations()
             .map(|(english, _)| *english)
-            .filter(|english| russian.get(english).is_none_or(|text| text.is_empty()))
+            .filter(|english| {
+                let translated = russian.get(*english).copied().or_else(|| {
+                    super::super::groq_side::translate(super::super::RUSSIAN_COLUMN, *english)
+                });
+                translated.is_none_or(|text| text.is_empty())
+            })
             .collect();
         assert!(missing.is_empty(), "no Russian for {missing:?}");
     }

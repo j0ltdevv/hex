@@ -526,11 +526,11 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Delete", "Törlés"),
     ("Remove", "Eltávolítás"),
     ("Dictation", "Diktálás"),
-    ("Groq API key", "Groq API-kulcs"),
-    ("Groq model", "Groq-modell"),
-    ("Whisper Large V3", "Whisper Large V3"),
-    ("Whisper Large V3 Turbo", "Whisper Large V3 Turbo"),
-    ("Dictation provider", "Diktálás szolgáltatója"),
+    ("Local", "Helyi"),
+    ("Groq", "Groq"),
+    ("Paste Groq key", "Groq-kulcs beillesztése"),
+    ("Local is the default and runs Hex's on-device model only. Groq sends dictation audio to Groq and requires an API key.", "A helyi az alapértelmezett, és csak a Hex eszközön futó modelljét használja. A Groq a diktálás hangját a Groqnak küldi, és API-kulcsot igényel."),
+    ("Used only when Dictation provider is Groq and a key is set.", "Csak akkor használatos, ha a diktálás szolgáltatója Groq, és be van állítva kulcs."),
     ("Send", "Küldés"),
     ("Printed", "Kiírva"),
     ("Raw", "Nyers"),
@@ -1496,7 +1496,12 @@ mod tests {
         let hungarian = super::table();
         let missing: Vec<&str> = super::super::all_translations()
             .map(|(english, _)| *english)
-            .filter(|english| hungarian.get(english).is_none_or(|text| text.is_empty()))
+            .filter(|english| {
+                let translated = hungarian.get(*english).copied().or_else(|| {
+                    super::super::groq_side::translate(super::super::HUNGARIAN_COLUMN, *english)
+                });
+                translated.is_none_or(|text| text.is_empty())
+            })
             .collect();
         assert!(missing.is_empty(), "no Hungarian for {missing:?}");
     }

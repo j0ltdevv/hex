@@ -366,13 +366,15 @@ pub struct Transcribed {
     pub source: Source,
     /// Time from the finish request to the final text.
     pub finish_ms: u64,
-    pub(crate) closing_mark_required: bool,
 }
 
-impl Transcribed {
-    pub(crate) fn accept_cloud_text(&self, text: String) -> Result<String, String> {
-        check_closing_mark(text, self.closing_mark_required)
-    }
+/// Cloud text is validated with the rule captured for the whole capture,
+/// not the local source that happened to finish.
+pub(crate) fn accept_cloud_text(
+    text: String,
+    closing_mark_required: bool,
+) -> Result<String, String> {
+    check_closing_mark(text, closing_mark_required)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1449,7 +1451,6 @@ impl Worker {
                         text,
                         source: Source::Stream,
                         finish_ms: started.elapsed().as_millis() as u64,
-                        closing_mark_required: closing_mark,
                     })),
                     Err(_) if job.cancel.is_cancelled() => {
                         job.finish(Err("transcription was abandoned".into()));
@@ -1531,7 +1532,6 @@ impl Worker {
             text: text.trim().to_string(),
             source,
             finish_ms: started.elapsed().as_millis() as u64,
-            closing_mark_required: false,
         });
         // An offline run may switch the model (macOS activates a selection).
         self.publish_slot();
@@ -1548,6 +1548,13 @@ mod tests {
         assert_eq!(Source::Stream.label(), "stream");
         assert_eq!(Source::Offline.label(), "offline");
         assert_eq!(Source::Fallback("x".into()).label(), "fallback");
+    }
+
+    #[test]
+    fn cloud_text_respects_the_captured_closing_mark_rule() {
+        assert!(accept_cloud_text("Done".into(), true).is_err());
+        assert_eq!(accept_cloud_text("Done.".into(), true), Ok("Done.".into()));
+        assert_eq!(accept_cloud_text("Done".into(), false), Ok("Done".into()));
     }
 
     #[test]
@@ -1671,7 +1678,6 @@ mod tests {
             text: "streamed 8".into(),
             source: Source::Stream,
             finish_ms: 0,
-            closing_mark_required: false,
         }));
         assert_eq!(dictation.wait().unwrap().source, Source::Stream);
         // The chunk waits to run after the stream.
@@ -2882,7 +2888,6 @@ mod tests {
                 text: "late but fine".into(),
                 source: Source::Offline,
                 finish_ms: 0,
-                closing_mark_required: false,
             }));
         });
         assert_eq!(pending.wait().unwrap().text, "late but fine");

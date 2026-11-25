@@ -92,8 +92,8 @@ struct InferenceJob {
     control: Arc<JobControl>,
     submitted_at: Instant,
     transcript: PendingTranscript,
-    /// Cloud result started beside this job when Groq is selected. None
-    /// everywhere else: local API, meetings, and file transcription stay local.
+    /// Cloud result started beside this job when Groq is selected. None on
+    /// the default Local path and on service (local API) targets.
     groq: Option<PendingGroq>,
     audio_ms: u64,
     prepare_ms: u128,
@@ -411,6 +411,27 @@ impl DictationWorker {
         self.submit(clip, target, context, Some(print), stop_phrase)
     }
 
+    /// Only a local-UI dictation may leave the machine. The local API's
+    /// Service target stays local even when Groq is selected.
+    fn groq_request_for(
+        target: TranscriptionTarget,
+        provider: crate::groq::SpeechProvider,
+        samples: &[f32],
+        language: &str,
+        prompt: impl FnOnce() -> Option<String>,
+        model: crate::groq::GroqModel,
+    ) -> Option<crate::groq::OwnedGroqRequest> {
+        (target != TranscriptionTarget::Service && provider == crate::groq::SpeechProvider::Groq)
+            .then(|| {
+                crate::groq::OwnedGroqRequest::new(
+                    samples.to_vec(),
+                    Some(language.to_owned()),
+                    prompt(),
+                    model,
+                )
+            })
+    }
+
     fn submit(
         &self,
         mut clip: DictationClip,
@@ -439,6 +460,7 @@ impl DictationWorker {
         });
         let (_, selection) = crate::app_settings::transcription_selection();
         let language = selection.language.clone();
+        let closing_mark_required = crate::groq::closing_mark_required(Some(&selection));
         let submitted_at = Instant::now();
         let audio_ms = clip.duration_ms();
         let send_gate = (matches!(target, TranscriptionTarget::Paste) && state.started_by_shortcut)
@@ -458,20 +480,18 @@ impl DictationWorker {
             _ => crate::history::Recording::keep(&samples),
         };
         let prepare_ms = submitted_at.elapsed().as_millis();
-        let groq_request = (crate::groq::speech_provider() == crate::groq::SpeechProvider::Groq)
-            .then(|| {
-                // The same context prompt the local run reads, carried to
-                // Groq with this capture alone.
-                let prompt = crate::dictation::vocabulary::for_dictation(|| {
+        let groq_request = Self::groq_request_for(
+            target,
+            crate::groq::speech_provider(),
+            &samples,
+            &language,
+            || {
+                crate::dictation::vocabulary::for_dictation(|| {
                     crate::dictation::vocabulary::transcription_prompt(500)
-                });
-                crate::groq::OwnedGroqRequest::new(
-                    samples.clone(),
-                    Some(language.clone()),
-                    prompt,
-                    crate::groq::groq_model(),
-                )
-            });
+                })
+            },
+            crate::groq::groq_model(),
+        );
         let offline = Box::new(move |model: &mut WarmTranscriber, samples: Vec<f32>| {
             let _busy = DictationInference::begin();
             let transcriber = model
@@ -486,7 +506,7 @@ impl DictationWorker {
             .finish_with(stream, samples, offline)
             .map_err(|_| "dictation worker is unavailable")?;
         let cancel = transcript.cancel_token();
-        let groq = PendingGroq::start(groq_request, cancel);
+        let groq = PendingGroq::start(groq_request, cancel, closing_mark_required);
         let ticket = OutputTicket::new(
             job_id.0,
             TicketKind::Dictation { job_id, target },
@@ -832,17 +852,19 @@ fn run_inference_worker(
         let audio_ms = job.audio_ms;
         let transcript = job.transcript;
         let groq = job.groq;
-        let result = transcript.wait().map(|transcribed| {
-            let text = crate::groq::settle_option(groq, &transcribed.text, |text| {
-                transcribed.accept_cloud_text(text)
-            });
-            tracing::info!(
-                source = transcribed.source.label(),
-                finish_ms = transcribed.finish_ms,
-                audio_ms,
-                "transcribed dictation"
-            );
-            let raw = text;
+        let settled = crate::groq::settle_transcript(
+            groq,
+            transcript.wait(),
+            crate::transcription::engine::accept_cloud_text,
+        );
+        tracing::info!(
+            source = settled.source.as_str(),
+            provider = if settled.cloud_used { "groq" } else { "local" },
+            finish_ms = settled.finish_ms,
+            audio_ms,
+            "transcribed dictation"
+        );
+        let result = settled.value.map(|raw| {
             // Labs › Stop phrase: the words that finished this capture never
             // reach the text, and a capture that was only the phrase reads as
             // empty.
@@ -1351,6 +1373,42 @@ mod tests {
             },
             recording: None,
         }
+    }
+
+    #[test]
+    fn service_target_submission_never_starts_a_cloud_request_but_paste_does() {
+        let samples = [0.0, 0.5, -0.5];
+        let request = |target| {
+            Parakeet::groq_request_for(
+                target,
+                crate::groq::SpeechProvider::Groq,
+                &samples,
+                "en",
+                || Some("terms".into()),
+                crate::groq::GroqModel::LargeV3,
+            )
+        };
+
+        assert!(
+            request(TranscriptionTarget::Service).is_none(),
+            "local API clips must never leave the machine"
+        );
+        let paste = request(TranscriptionTarget::Paste).expect("paste still uses Groq");
+        assert_eq!(paste.samples, samples);
+        assert_eq!(paste.language.as_deref(), Some("en"));
+        assert_eq!(paste.prompt.as_deref(), Some("terms"));
+        assert!(
+            Parakeet::groq_request_for(
+                TranscriptionTarget::Paste,
+                crate::groq::SpeechProvider::Local,
+                &samples,
+                "en",
+                || None,
+                crate::groq::GroqModel::LargeV3,
+            )
+            .is_none(),
+            "Local stays the default"
+        );
     }
 
     #[test]

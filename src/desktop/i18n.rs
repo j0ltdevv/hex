@@ -18,6 +18,7 @@ mod clipboard_phrase;
 mod clock;
 mod failures;
 mod french;
+mod groq_side;
 mod history;
 mod hud_height;
 mod hungarian;
@@ -327,6 +328,9 @@ pub(crate) fn tr(english: &str) -> &str {
             None => english,
         };
     }
+    if let Some(text) = groq_side::translate(column, english) {
+        return text;
+    }
     let table = match column {
         PORTUGUESE_COLUMN => portuguese::table(),
         FRENCH_COLUMN => french::table(),
@@ -625,6 +629,7 @@ mod tests {
         include_str!("../rune_ui/fun.rs"),
         include_str!("../rune_ui/general.rs"),
         include_str!("../rune_ui/general/extra_shortcuts.rs"),
+        include_str!("../rune_ui/general/groq.rs"),
         include_str!("../rune_ui/general/page.rs"),
         include_str!("../rune_ui/find_popover.rs"),
         include_str!("../rune_ui/find_popover/catalog.rs"),
@@ -945,6 +950,43 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+    // The provider card's copy is shown on every OS and in every language.
+    #[test]
+    fn provider_copy_is_translated_in_every_table() {
+        let main: std::collections::HashMap<_, _> = all_translations().copied().collect();
+        let side = [
+            ("French", super::french::table()),
+            ("Portuguese", super::portuguese::table()),
+            ("Russian", super::russian::table()),
+            ("Hungarian", super::hungarian::table()),
+        ];
+        let traditional = super::traditional_chinese::table();
+        for english in [
+            "Local",
+            "Groq",
+            "Paste Groq key",
+            "Local is the default and runs Hex's on-device model only. Groq sends dictation audio to Groq and requires an API key.",
+            "Used only when Dictation provider is Groq and a key is set.",
+        ] {
+            assert!(
+                main.get(english)
+                    .is_some_and(|row| row.iter().all(|text| !text.is_empty())),
+                "the main table has no complete {english:?}"
+            );
+            for (language, table) in &side {
+                assert!(
+                    table.get(english).is_some_and(|text| !text.is_empty()),
+                    "{language} has no {english:?}"
+                );
+            }
+            assert!(
+                traditional
+                    .get(english)
+                    .is_some_and(|text| !text.is_empty()),
+                "Traditional Chinese has no {english:?}"
+            );
         }
     }
 

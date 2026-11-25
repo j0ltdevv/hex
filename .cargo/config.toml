@@ -20,4 +20,8 @@ rustflags = ["-C", "target-feature=+crt-static"]
 # add a type here before the catalog gains a model that needs it
 # (`gguf_artifacts_are_q8_0_for_the_vulkan_shader_subset` guards the catalog).
 [env]
+# Source checkouts are local builds: no update checks, downloads, or installs.
+# force = true keeps an ambient HEX_LOCAL_BUILD value from turning updates back
+# on in a build made from this fork.
+HEX_LOCAL_BUILD = { value = "1", force = true }
 CMAKE_ARGS = "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DGGML_VULKAN_SHADER_TYPES=f32,f16,q8_0,q5_0 -DGGML_VULKAN_MUL_MAT_ID=OFF"

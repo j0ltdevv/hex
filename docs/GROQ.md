@@ -19,26 +19,34 @@ uses the same two values; the key itself stays read-only and redacted.
 - **Local** — Hex uses its on-device model exactly as in the base fork. No
   Groq request is made, even when a key happens to be saved in settings or
   exported in the environment. Local is the explicit local-only mode.
-- **Groq** — Dictation sends the complete clip to Groq only when a usable key
-  is available. Without a key, or after an error, empty result, or
-  cancellation, the same clip goes through the unchanged Local path. This is
-  one attempt at Groq followed by one Local fallback, not a retry storm.
+- **Groq** — At submission Hex snapshots the provider, model, and usable key;
+  changing a key mid-capture cannot redirect that request. The complete clip
+  goes to Groq on a worker while the unchanged local transcription runs in
+  parallel. Without a key, or after an error, empty result, or cancellation,
+  the local result is used. This is one cloud attempt beside one Local
+  transcription, not a retry storm.
 - The selected model is `groq_model`: `whisper-large-v3` (the default, shown as
   **Whisper Large V3**) or `whisper-large-v3-turbo` (**Whisper Large V3
   Turbo**). The model choice is used only when Dictation provider is Groq and
   a key is set.
 
-Meetings, the local transcription API, and `hex transcribe` remain local. A
-successful Groq transcript joins the ordinary processing, paste, History, and
-ordered-output paths. History keeps its existing `Source` labels and schema
-unchanged; provider attribution lives only in the bounded in-memory usage
-ring. When the local live stream produced text and timings, those timings are
-preserved as far as the existing transcript structure allows. Groq text also
-goes through the existing closing-mark check.
+Meetings, the local transcription API (including `/dictations`), and `hex
+transcribe` remain local; none of them starts a Groq request. Only
+complete-clip dictation can use Groq. A successful Groq transcript joins the
+ordinary processing, paste, History, and ordered-output paths. History keeps
+its existing `Source` labels and schema unchanged; the provider actually used
+is logged explicitly (`groq` or `local`) beside the ordinary source label, and
+the bounded in-memory usage ring records the same attribution. When the local
+live stream produced text and timings, those timings are preserved as far as
+the existing transcript structure allows. Accepted text follows the ordinary
+output and closing-mark rules for its source; a failed local stream has no
+stream mark to inherit.
 
 ## Key sources, precedence, and isolation
 
-Resolution is performed when the provider is Groq; the order is:
+Resolution happens once when a dictation is submitted with provider Groq, and
+the resulting key travels with that request; a key added or removed later
+cannot change it. The next capture re-resolves. The order is:
 
 1. A trimmed, nonempty `GROQ_API_KEY` in the process environment.
 2. A trimmed, nonempty key in `<Hex data root>/groq.key`.
@@ -88,24 +96,28 @@ Samples are encoded as mono 16 kHz audio. The multipart body carries:
 - `file` — first a FLAC upload (`dictation.flac`, `audio/flac`).
 
 The key appears only in the bearer `Authorization` header, never in a
-multipart field. A pure-Rust encoder avoids a new audio dependency. If Groq
-answers HTTP **400**, **415**, or **422**, Hex retries once with the same
-samples encoded as WAV (`dictation.wav`, `audio/wav`); other failures are not
-retried. The request uses Hex's existing HTTP client with no redirects, a
-24 MiB preflight cap, a 1 MiB response cap, and a 60-second deadline. An
-empty or malformed transcript is treated as a failure and uses the Local
-fallback.
+multipart field. A pure-Rust encoder avoids a new audio dependency. Only HTTP
+**415** or **422** (an audio-format rejection) triggers one WAV retry with the
+same samples (`dictation.wav`, `audio/wav`); other answers, including a generic
+400, are not retried. The request uses Hex's existing HTTP client with no
+redirects, a 24 MiB preflight cap, a 1 MiB response cap, and a 60-second
+deadline. An empty or malformed transcript is treated as a failure and uses
+the Local result.
 
-The HTTP work runs off the engine worker (`groq::spawn` returns a one-shot
-receiver). The dictation's ordered output worker polls that receiver beside
-the local transcript, checks cancellation before and during the bounded
-request, and settles jobs in submission order. Cancelling a job keeps the
-local result and does not produce a cloud paste. This changes the transport,
-not the shortcut state machine or the ordered-output path.
+The HTTP work runs off the engine worker: submission snapshots the key and
+starts `groq::spawn`, which returns a one-shot receiver, while the unchanged
+local transcription runs in parallel. The dictation's ordered output worker
+polls that receiver beside the local transcript, checks cancellation before
+and during the bounded request, and rechecks it when a result is already
+queued, so a cancelled capture never pastes cloud text. Rejected queue jobs
+cancel the cloud request before returning, and a local transcription error
+still settles or cancels the pending cloud job. Jobs paste in submission
+order. This changes the transport, not the shortcut state machine.
 
-The privacy boundary is the provider choice plus the key: audio leaves the
-machine only for a Groq dictation with a usable key. Local, missing key,
-cancelled, and failed paths do not send dictation audio to Groq.
+The privacy boundary is the provider choice plus the key at submission: audio
+leaves the machine only for a Groq dictation with a usable key at that moment.
+Local, missing-key, cancelled, rejected, and failed paths do not paste cloud
+text, and cancellation stops an already-sent result from being accepted.
 
 ## Usage and cost records
 
@@ -139,8 +151,8 @@ source.
 | `src/rune_ui/general/groq.rs` | Provider picker, masked key field, model picker, and local/Groq descriptions. |
 | `src/desktop/i18n/strings.rs`, `french.rs`, `hungarian.rs`, `portuguese.rs`, `russian.rs` | Translations for every new provider string; Traditional Chinese derives from the Simplified column in `traditional_chinese.rs`. |
 | `src/transcription/engine.rs` | Restored local paths, closing-mark metadata, and a cloneable job cancellation for cloud work. |
-| `src/linux/dictation.rs`, `src/windows/dictation.rs`, `src/windows/dictation/finish.rs`, `src/windows/dictation/output.rs` | Linux/Windows provider gate, off-worker request start, and ordered Local-fallback settlement. |
-| `src/parakeet.rs` | macOS dictation worker uses the same shared `PendingGroq` helper. |
+| `src/linux/dictation.rs`, `src/windows/dictation.rs`, `src/windows/dictation/finish.rs`, `src/windows/dictation/output.rs` | Linux/Windows provider gate, submission-time key snapshot, off-worker request start, cancellation, provider logging, and ordered Local-fallback settlement. |
+| `src/parakeet.rs` | macOS dictation worker uses the same shared `PendingGroq` helper and provider logging; `/dictations` and other service targets stay local. |
 | `docs/GROQ.md` | This behavior, evidence limits, and sync guidance. |
 | `docs/features/dictation.md`, `docs/features/README.md` | Stable `dictate.groq-cloud-fallback` behavior ID and product-map entry. |
 
@@ -150,11 +162,12 @@ platform TLS support.
 ## Verification boundary
 
 The behavior ID is **`dictate.groq-cloud-fallback`** in both feature maps.
-Offline `groq::tests` use constructed keys and loopback HTTP fixtures; they
-cover the Local default, a saved key not enabling Groq by itself, Groq
-selection without a key, key precedence/isolation, owner-only key-file
-permissions, multipart `language`/`prompt`/`model` fields, FLAC then WAV on
-400/415/422, redacted errors and usage records, and cancellation flags.
+Offline checks use constructed keys and loopback HTTP fixtures; they cover
+the Local default, a saved key not enabling Groq by itself, Groq selection
+without a key, key precedence/isolation and the submission-time snapshot,
+cancellation (including an already-queued result), rejected-job cancellation,
+WAV retry only on 415/422, explicit provider attribution, multipart
+`language`/`prompt`/`model` fields, and redacted errors and usage records.
 `control::settings::choice_tests` keeps the CLI provider choice aligned with
 the enum's serde names. The i18n tables have a completeness check for every
 interface language. These are deterministic checks, not live-cloud proof.
@@ -162,12 +175,14 @@ interface language. These are deterministic checks, not live-cloud proof.
 `src/groq/tests.rs` also contains one **ignored** live smoke. It is opt-in:
 set `HEX_GROQ_LIVE_FIXTURE` to a 16 kHz mono WAV and `GROQ_API_KEY` to a real
 key, then run the named ignored test. No real key or fixture is needed for the
-default suite, and neither value is printed. A previously observed live
-request showed that a real Groq transcription can return nonempty text; that
-does **not** prove provider selection in a shortcut-driven dictation, paste,
-fallback latency, History entries on a live machine, audio quality, or cost. The
-UI row changes the `mac-settings-advanced` golden; no native end-to-end run or
-native-speaker translation review is implied by the offline checks.
+default suite, and neither value is printed. On 2026-11-25 a physical Linux
+`Alt+Space` dictation was observed sending audio to Groq, receiving HTTP 200,
+pasting the returned text, and creating a History entry. The ignored live smoke
+also returned nonempty text. These observations prove one Linux path; they do
+not prove native macOS/Windows behavior, queue-full recovery, cancellation
+timing, fallback latency, audio quality, GPU execution, or billed cost. The UI
+row changes the `mac-settings-advanced` golden; no native-speaker translation
+review is implied by the offline checks.
 
 Focused checks for this fork (recorded as locators, not as results of this
 document edit):
@@ -208,11 +223,12 @@ taking either whole file:
 2. **Rebase engine and worker hunks manually.** `transcription/engine.rs`
    owns streaming, cancellation, deadlines, model leases, order, and
    fallback. Preserve those upstream paths; insert only a provider-gated
-   cloud attempt at complete-clip dictation transcription, consume the
-   off-worker receiver without blocking, fall back to Local once with the
-   original samples, and leave meetings, local API, and CLI transcribe alone.
-   Apply the same gate in `parakeet.rs` without changing accepted jobs,
-   cancellation, processing, or ordered output.
+   cloud attempt at complete-clip dictation transcription, resolve the key at
+   submission, consume the off-worker receiver without blocking the engine,
+   fall back to Local once with the original samples, and leave meetings,
+   `/dictations`, local API, and CLI transcribe alone. Apply the same gate in
+   `parakeet.rs` without changing accepted jobs, cancellation, processing, or
+   ordered output.
 3. **Preserve secret boundaries.** Keep the resolution order, trimmed
    nonempty checks, `groq.key` permissions and isolation rule, CLI
    redaction/read-only behavior, secret-safe `Debug`, and owner-only settings

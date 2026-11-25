@@ -4,8 +4,6 @@ name: Release Hex Mobile
 # build numbers, and distribution to Hex Internal.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0,17,18,23 * * *"
 
 permissions:
   contents: write

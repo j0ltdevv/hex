@@ -20,12 +20,25 @@ pub(crate) use keys::{
 };
 pub(crate) use usage::{UsageOutcome, UsageRecord};
 
+/// A settlement result: `cloud_used` is true only when cloud text was accepted.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct Settled<T> {
+    pub(crate) value: T,
+    pub(crate) cloud_used: bool,
+}
+
+/// The closing-mark rule from the selection captured for a whole capture,
+/// independent of which local source finishes.
+pub(crate) fn closing_mark_required(
+    selection: Option<&crate::transcription::models::TranscriptionSelection>,
+) -> bool {
+    crate::transcription::requires_closing_mark(selection.map(|selection| selection.model))
+}
+
 const ENDPOINT: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_AUDIO_BYTES: usize = 24 * 1024 * 1024;
 const MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
-const BOUNDARY: &str = "hex-groq-dictation";
-const CONTENT_TYPE: &str = "multipart/form-data; boundary=hex-groq-dictation";
 
 /// Which transcriber a dictation uses. Local is Hex's unchanged default.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -457,7 +470,10 @@ fn transcribe_once(
     if audio.len() > MAX_AUDIO_BYTES {
         return Err(Failure::new("audio", "the encoded audio exceeded 24 MiB"));
     }
+    let boundary = boundary();
+    let content_type = format!("multipart/form-data; boundary={boundary}");
     let body = multipart(
+        &boundary,
         request.model,
         request.language,
         request.prompt,
@@ -469,7 +485,7 @@ fn transcribe_once(
         .post(endpoint)
         .header("Authorization", format!("Bearer {key}"))
         .header("Accept", "application/json")
-        .content_type(CONTENT_TYPE)
+        .content_type(&content_type)
         .config()
         .timeout_global(Some(TIMEOUT))
         .max_redirects(0)
@@ -516,6 +532,7 @@ fn transcribe_once(
 }
 
 fn multipart(
+    boundary: &str,
     model: GroqModel,
     language: Option<&str>,
     prompt: Option<&str>,
@@ -527,22 +544,23 @@ fn multipart(
         AudioFormat::Wav => ("dictation.wav", "audio/wav"),
     };
     let mut body = Vec::with_capacity(
-        256 + model.as_str().len()
+        256 + boundary.len()
+            + model.as_str().len()
             + audio.len()
             + language.map_or(0, str::len)
             + prompt.map_or(0, str::len),
     );
-    push_text_field(&mut body, "model", model.as_str());
-    push_text_field(&mut body, "response_format", "json");
-    push_text_field(&mut body, "temperature", "0");
+    push_text_field(&mut body, boundary, "model", model.as_str());
+    push_text_field(&mut body, boundary, "response_format", "json");
+    push_text_field(&mut body, boundary, "temperature", "0");
     if let Some(language) = language.filter(|value| !value.is_empty()) {
-        push_text_field(&mut body, "language", language);
+        push_text_field(&mut body, boundary, "language", language);
     }
     if let Some(prompt) = prompt.filter(|value| !value.is_empty()) {
-        push_text_field(&mut body, "prompt", prompt);
+        push_text_field(&mut body, boundary, "prompt", prompt);
     }
     body.extend_from_slice(b"--");
-    body.extend_from_slice(BOUNDARY.as_bytes());
+    body.extend_from_slice(boundary.as_bytes());
     body.extend_from_slice(b"\r\nContent-Disposition: form-data; name=\"file\"; filename=\"");
     body.extend_from_slice(filename.as_bytes());
     body.extend_from_slice(b"\"\r\nContent-Type: ");
@@ -550,19 +568,34 @@ fn multipart(
     body.extend_from_slice(b"\r\n\r\n");
     body.extend_from_slice(audio);
     body.extend_from_slice(b"\r\n--");
-    body.extend_from_slice(BOUNDARY.as_bytes());
+    body.extend_from_slice(boundary.as_bytes());
     body.extend_from_slice(b"--\r\n");
     body
 }
 
-fn push_text_field(body: &mut Vec<u8>, name: &str, value: &str) {
+fn push_text_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
     body.extend_from_slice(b"--");
-    body.extend_from_slice(BOUNDARY.as_bytes());
+    body.extend_from_slice(boundary.as_bytes());
     body.extend_from_slice(b"\r\nContent-Disposition: form-data; name=\"");
     body.extend_from_slice(name.as_bytes());
     body.extend_from_slice(b"\"\r\n\r\n");
     body.extend_from_slice(value.as_bytes());
     body.extend_from_slice(b"\r\n");
+}
+
+/// A fresh unpredictable boundary per upload: user text can never name the
+/// separator that would turn it into extra form fields.
+fn boundary() -> String {
+    let mut bytes = [0_u8; 16];
+    getrandom::fill(&mut bytes).expect("system randomness is unavailable");
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut boundary = String::with_capacity(9 + bytes.len() * 2);
+    boundary.push_str("hex-groq-");
+    for byte in bytes {
+        boundary.push(HEX[(byte >> 4) as usize] as char);
+        boundary.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    boundary
 }
 
 fn production_agent() -> ureq::Agent {
@@ -576,8 +609,11 @@ fn production_agent() -> ureq::Agent {
 }
 
 /// Runs one cloud transcription on a worker thread and reports one result.
+/// The key is resolved by the caller when the job is submitted, so a later
+/// key change cannot redirect or suppress this upload.
 pub(crate) fn spawn(
     request: OwnedGroqRequest,
+    key: GroqApiKey,
     cancel: CancelToken,
 ) -> mpsc::Receiver<Result<String, String>> {
     let (sender, receiver) = mpsc::channel();
@@ -589,16 +625,13 @@ pub(crate) fn spawn(
             let result = if cancellation.is_cancelled() {
                 Err(cancelled_message())
             } else {
-                match active_key() {
-                    Some(key) => transcribe_with_retry(
-                        &production_agent(),
-                        ENDPOINT,
-                        &key,
-                        request.borrowed(),
-                        &cancellation,
-                    ),
-                    None => Err("Groq is not configured".into()),
-                }
+                transcribe_with_retry(
+                    &production_agent(),
+                    ENDPOINT,
+                    &key,
+                    request.borrowed(),
+                    &cancellation,
+                )
             };
             if let Err(error) = &result {
                 tracing::warn!(
@@ -621,38 +654,124 @@ pub(crate) fn spawn(
 pub(crate) struct PendingGroq {
     reply: mpsc::Receiver<Result<String, String>>,
     cancel: CancelToken,
+    closing_mark_required: bool,
 }
 
 impl PendingGroq {
-    pub(crate) fn start(request: Option<OwnedGroqRequest>, cancel: CancelToken) -> Option<Self> {
-        request.map(|request| Self {
-            reply: spawn(request, cancel.clone()),
+    /// Snapshots the credential before spawning; with no key there is no
+    /// cloud thread and no upload.
+    pub(crate) fn start(
+        request: Option<OwnedGroqRequest>,
+        cancel: CancelToken,
+        closing_mark_required: bool,
+    ) -> Option<Self> {
+        let key = request.is_some().then(active_key).flatten();
+        Self::start_with_key(request, key, cancel, closing_mark_required)
+    }
+
+    fn start_with_key(
+        request: Option<OwnedGroqRequest>,
+        key: Option<GroqApiKey>,
+        cancel: CancelToken,
+        closing_mark_required: bool,
+    ) -> Option<Self> {
+        let request = request?;
+        let key = key?;
+        Some(Self {
+            reply: spawn(request, key, cancel.clone()),
             cancel,
+            closing_mark_required,
         })
     }
 
-    /// Returns cloud text only when accepted; any error, empty result,
-    /// disconnect, or cancellation keeps the local transcript.
+    /// The closing-mark rule captured with this job, used when settling
+    /// cloud text beside a failed local run.
+    pub(crate) fn closing_mark_required(&self) -> bool {
+        self.closing_mark_required
+    }
+
+    /// Returns cloud text only when accepted. Any error, rejection,
+    /// disconnect, or cancellation keeps the local result.
     pub(crate) fn settle(
         self,
         local_text: &str,
         accept: impl FnOnce(String) -> Result<String, String>,
-    ) -> String {
-        if self.cancel.is_cancelled() {
-            return local_text.to_owned();
+    ) -> Settled<String> {
+        match self.settle_cloud(accept) {
+            Some(text) => Settled {
+                value: text,
+                cloud_used: true,
+            },
+            None => Settled {
+                value: local_text.to_owned(),
+                cloud_used: false,
+            },
         }
+    }
+
+    /// Settles with no local text, for a local transcription that failed.
+    pub(crate) fn settle_cloud(
+        self,
+        accept: impl FnOnce(String) -> Result<String, String>,
+    ) -> Option<String> {
+        Self::receive(&self.reply, &self.cancel, accept)
+    }
+
+    fn receive(
+        reply: &mpsc::Receiver<Result<String, String>>,
+        cancel: &CancelToken,
+        accept: impl FnOnce(String) -> Result<String, String>,
+    ) -> Option<String> {
         loop {
-            match self.reply.recv_timeout(Duration::from_millis(100)) {
-                Ok(Ok(text)) => return accept(text).unwrap_or_else(|_| local_text.to_owned()),
-                Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return local_text.to_owned();
+            match reply.recv_timeout(Duration::from_millis(100)) {
+                Ok(Ok(text)) => {
+                    // A cancel can land after the worker queued its text.
+                    if cancel.is_cancelled() {
+                        return None;
+                    }
+                    return accept(text).ok();
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) if self.cancel.is_cancelled() => {
-                    return local_text.to_owned();
-                }
+                Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => return None,
+                Err(mpsc::RecvTimeoutError::Timeout) if cancel.is_cancelled() => return None,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
         }
+    }
+}
+
+impl Drop for PendingGroq {
+    fn drop(&mut self) {
+        // A rejected, abandoned, or settled job must not leave an upload
+        // running; the flag is also observed inside the worker.
+        self.cancel.cancel();
+    }
+}
+
+/// Settles an optional cloud job beside a local result. An already-started
+/// cloud request is also consumed (or cancelled) when the local run failed.
+pub(crate) fn settle_local<E>(
+    pending: Option<PendingGroq>,
+    local: Result<String, E>,
+    accept: impl FnOnce(String) -> Result<String, String>,
+) -> Settled<Result<String, E>> {
+    match local {
+        Ok(text) => {
+            let settled = settle_option(pending, &text, accept);
+            Settled {
+                value: Ok(settled.value),
+                cloud_used: settled.cloud_used,
+            }
+        }
+        Err(error) => match pending.and_then(|pending| pending.settle_cloud(accept)) {
+            Some(text) => Settled {
+                value: Ok(text),
+                cloud_used: true,
+            },
+            None => Settled {
+                value: Err(error),
+                cloud_used: false,
+            },
+        },
     }
 }
 
@@ -662,11 +781,51 @@ pub(crate) fn settle_option(
     pending: Option<PendingGroq>,
     local_text: &str,
     accept: impl FnOnce(String) -> Result<String, String>,
-) -> String {
+) -> Settled<String> {
     pending.map_or_else(
-        || local_text.to_owned(),
+        || Settled {
+            value: local_text.to_owned(),
+            cloud_used: false,
+        },
         |pending| pending.settle(local_text, accept),
     )
+}
+
+/// Settlement plus the local source label and timing a dictation worker logs.
+pub(crate) struct TranscriptSettlement<T> {
+    pub(crate) value: T,
+    pub(crate) cloud_used: bool,
+    pub(crate) source: String,
+    pub(crate) finish_ms: u64,
+}
+
+/// Settles a whole local transcript and its optional cloud request. The
+/// closing-mark rule is read from the pending job, so it also applies when
+/// the local stream falls back or fails.
+pub(crate) fn settle_transcript<E>(
+    pending: Option<PendingGroq>,
+    local: Result<crate::transcription::engine::Transcribed, E>,
+    accept: fn(String, bool) -> Result<String, String>,
+) -> TranscriptSettlement<Result<String, E>> {
+    let source = local.as_ref().map_or_else(
+        |_| "unavailable".to_owned(),
+        |transcribed| transcribed.source.label().to_owned(),
+    );
+    let finish_ms = local
+        .as_ref()
+        .map_or(0, |transcribed| transcribed.finish_ms);
+    let required = pending
+        .as_ref()
+        .is_some_and(PendingGroq::closing_mark_required);
+    let settled = settle_local(pending, local.map(|transcribed| transcribed.text), |text| {
+        accept(text, required)
+    });
+    TranscriptSettlement {
+        value: settled.value,
+        cloud_used: settled.cloud_used,
+        source,
+        finish_ms,
+    }
 }
 
 /// Compatibility path for callers not yet routed through `spawn`.
@@ -746,7 +905,9 @@ impl Failure {
     }
 
     fn retryable(&self) -> bool {
-        matches!(self.status, Some(400 | 415 | 422))
+        // Only audio-format rejections can be fixed by re-encoding as WAV;
+        // a 400 for a bad prompt/model/language must not be billed twice.
+        matches!(self.status, Some(415 | 422))
     }
 
     fn request(endpoint: &str, error: ureq::Error) -> Self {

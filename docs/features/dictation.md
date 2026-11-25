@@ -537,20 +537,22 @@ does not prove the physical dictation shortcut; see the [feature index](README.m
 ```ts
 Settings > General > Advanced > Dictation > Dictation provider / Groq key / Groq model   // dictate.groq-cloud-fallback
 ├── Local (default) -> existing local model only; a saved key alone sends no request
-├── Groq -> needs a key: trimmed GROQ_API_KEY, else <data>/groq.key, else legacy groq_api_key
+├── Groq -> key snapshotted at submission: trimmed GROQ_API_KEY, else <data>/groq.key, else legacy groq_api_key
 │   └── with HEX_APPLICATION_SUPPORT_DIR + HEX_GROQ_ALLOW_SYSTEM_KEYS=0 -> env/system keys ignored
-├── Key + Groq -> one off-worker request with language and vocabulary prompt
+├── Key + Groq -> one off-worker request with language and vocabulary prompt, beside the unchanged local transcription
 │   ├── whisper-large-v3 (default) -> "Whisper Large V3"
 │   ├── whisper-large-v3-turbo -> "Whisper Large V3 Turbo"
-│   ├── FLAC upload -> HTTP 400/415/422 -> one WAV retry; other errors are not retried
+│   ├── FLAC upload -> HTTP 415/422 only -> one WAV retry; other statuses, including 400, are not retried
+│   ├── provider (groq or local) logged; ordered output keeps submission order
 │   └── success -> ordinary processing and ordered output; source labels unchanged
-└── empty, error, or cancel -> transcribe the same complete clip once with the local model
-```
+└── cancel or rejected queue job -> cloud result is not pasted; empty/error/cancel -> same complete clip goes through Local
 
-This changes dictation only: meetings, the local transcription API, and `hex
-transcribe` keep their existing local path. Choosing a local Speech model with
-the Groq provider selected still means Local is the fallback, not a second Groq
-request. `groq.key` under the Hex data root is owner-only (`0600`), and the
+This changes dictation only: `/dictations`, meetings, the local transcription
+API, and `hex transcribe` keep their existing local path. Choosing a local
+Speech model with the Groq provider selected still means Local is the fallback,
+not a second Groq request. The provider actually used (`groq` or `local`) is
+logged beside the unchanged source label; History's labels and schema do not
+change. `groq.key` under the Hex data root is owner-only (`0600`), and the
 legacy setting stays redacted and read-only through `hex settings`; with an
 overridden data root, `HEX_GROQ_ALLOW_SYSTEM_KEYS=0` ignores the environment key.
 Hex never logs the key. A bounded, in-memory usage ring records provider, model,
@@ -562,12 +564,13 @@ Sources: [groq.rs](../../src/groq.rs) with [flac.rs](../../src/groq/flac.rs),
 routing in [transcription/engine.rs](../../src/transcription/engine.rs) and
 [parakeet.rs](../../src/parakeet.rs), and settings in
 [app_settings.rs](../../src/app_settings.rs). Checks in
-[groq/tests.rs](../../src/groq/tests.rs) cover the Local default, a saved key
-not enabling Groq by itself, key precedence/isolation and key-file permissions,
-language/prompt multipart fields, FLAC then WAV retry on 400/415/422,
-cancellation, redacted errors/usage records, and provider serde metadata;
-[choice_tests.rs](../../src/control/settings/choice_tests.rs) guards the CLI
-choice against enum drift. The engine and dictation worker contain the routing.
+[groq/tests.rs] cover the Local default, a saved key not enabling Groq by
+itself, key precedence/isolation and key-file permissions, the submission-time
+key snapshot, language/prompt multipart fields, WAV retry only on 415/422,
+cancellation including an already-queued result, rejected-job cancellation,
+provider attribution, redacted errors/usage records, and provider serde
+metadata; [choice_tests.rs] guards the CLI choice against enum drift. The
+engine and dictation worker contain the routing.
 One live Groq HTTP request was observed with a generated speech fixture; full
 shortcut-driven dictation, paste, live fallback, and cost on a live machine
 remain unverified. Groq changes the transcription route, not

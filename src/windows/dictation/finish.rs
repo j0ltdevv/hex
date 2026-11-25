@@ -39,10 +39,11 @@ pub(super) fn submit_capture(
             let stream = clip.take_stream();
             let samples = clip.into_transcription_samples();
             let recording = crate::history::Recording::keep(&samples);
-            let language = engine
+            let selection = engine
                 .held_selection()
-                .unwrap_or_else(|| crate::app_settings::transcription_selection().1)
-                .language;
+                .unwrap_or_else(|| crate::app_settings::transcription_selection().1);
+            let language = selection.language.clone();
+            let closing_mark_required = crate::groq::closing_mark_required(Some(&selection));
             let groq_request =
                 (crate::groq::speech_provider() == crate::groq::SpeechProvider::Groq).then(|| {
                     let prompt = crate::dictation::vocabulary::for_dictation(|| {
@@ -56,7 +57,11 @@ pub(super) fn submit_capture(
                     )
                 });
             let transcript = engine.finish(stream, samples)?;
-            let groq = crate::groq::PendingGroq::start(groq_request, transcript.cancel_token());
+            let groq = crate::groq::PendingGroq::start(
+                groq_request,
+                transcript.cancel_token(),
+                closing_mark_required,
+            );
             let job = OutputJob::Dictation(Box::new(Job {
                 context,
                 transcript,

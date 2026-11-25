@@ -49,8 +49,21 @@ pub(crate) fn write_key_file(path: &Path, key: &GroqApiKey) -> io::Result<()> {
 }
 
 /// Reads a data-root key file only when it is a small, owner-only regular file.
+/// On Unix the descriptor is opened with `O_NOFOLLOW` and checked with
+/// `fstat`, so a symlink swap after a path check cannot borrow a key.
 pub(crate) fn read_key_file(path: &Path) -> Option<GroqApiKey> {
-    let metadata = fs::metadata(path).ok()?;
+    #[cfg(unix)]
+    let mut file = {
+        let mut options = OpenOptions::new();
+        options
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        options.open(path).ok()?
+    };
+    #[cfg(not(unix))]
+    let mut file = fs::File::open(path).ok()?;
+
+    let metadata = file.metadata().ok()?;
     if !metadata.is_file() || metadata.len() > MAX_KEY_BYTES {
         return None;
     }
@@ -61,7 +74,7 @@ pub(crate) fn read_key_file(path: &Path) -> Option<GroqApiKey> {
         }
     }
     let mut bytes = Vec::with_capacity(metadata.len() as usize + 1);
-    fs::File::open(path).ok()?.read_to_end(&mut bytes).ok()?;
+    file.read_to_end(&mut bytes).ok()?;
     nonempty_key(std::str::from_utf8(&bytes).ok()?)
 }
 

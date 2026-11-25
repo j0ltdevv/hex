@@ -2204,7 +2204,9 @@ fn platform_goldens() {
     check_golden("shortcut-mode-chord", false, PANE_SIZE);
     check_golden("portal-toggle-cancel", false, PANE_SIZE);
     check_golden("mac-settings-permissions", true, PANE_SIZE);
-    check_golden("mac-settings-advanced", false, PANE_SIZE);
+    for dark in [true, false] {
+        check_golden("mac-settings-advanced", dark, PANE_SIZE);
+    }
     check_golden("mac-microphone-bluetooth", true, PANE_SIZE);
     check_golden("meetings-calendar-denied", true, PANE_SIZE);
     check_golden("windows-settings", false, GOLDEN_SIZE);
@@ -3667,7 +3669,9 @@ fn ducking_goldens() {
         check_golden("mac-settings", dark, PANE_SIZE);
     }
     check_golden("mac-settings-permissions", true, PANE_SIZE);
-    check_golden("mac-settings-advanced", false, PANE_SIZE);
+    for dark in [true, false] {
+        check_golden("mac-settings-advanced", dark, PANE_SIZE);
+    }
     check_golden("mac-settings-sides", true, PANE_SIZE);
 }
 

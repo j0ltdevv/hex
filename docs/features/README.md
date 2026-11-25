@@ -888,10 +888,11 @@ Labs > Free memory when idle (off; 5/15/30/60 min, default 15)   // labs.md; tra
 
 Settings > General > Advanced > Dictation > Dictation provider / Groq key / Groq model   // dictate.groq-cloud-fallback
   -> Local is the default: on-device only, no Groq request even with a saved key
-  -> Groq needs a key: GROQ_API_KEY (unless isolated), then <data>/groq.key, then legacy setting
-  -> language and vocabulary prompt go with the audio; FLAC first, WAV retry on 400/415/422
-  -> success follows ordinary processing/ordered output; failure, empty result, or cancel -> one Local fallback
-  -> deterministic loopback checks; one ignored live smoke; shortcut/paste and live cost remain unverified
+  -> Groq needs a key snapshotted at submission: GROQ_API_KEY (unless isolated), then <data>/groq.key, then legacy setting
+  -> language and vocabulary prompt go with the audio; FLAC first, WAV retry only on 415/422
+  -> off-worker request runs beside local transcription; cancel or queue rejection stops the cloud paste
+  -> success follows ordinary processing/ordered output with provider logged; empty/error/cancel -> same clip's Local result
+  -> /dictations, meetings, local API, and hex transcribe stay local; loopback checks only, live paste/cost unverified
 ```
 
 The [detailed map](dictation.md) covers timing, successive captures, output
