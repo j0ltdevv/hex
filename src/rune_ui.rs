@@ -744,7 +744,6 @@ pub(crate) struct Ui {
 struct Drafts {
     modes: bool,
     vocabulary: bool,
-    groq_api_key: bool,
     labs: labs::LabDrafts,
 }
 
@@ -804,9 +803,10 @@ impl Ui {
     }
 
     fn with(settings: AppSettings, service: Service) -> Self {
-        let modes = modes::ModesPane::new(&settings);
-        let vocabulary = vocabulary::VocabularyEditor::new(&settings.vocabulary);
         Self {
+            vocabulary: vocabulary::VocabularyEditor::new(&settings.vocabulary),
+            modes: modes::ModesPane::new(&settings),
+            groq_api_key: general::groq::draft(&settings.groq_api_key),
             settings,
             #[cfg(test)]
             preferred_language: None,
@@ -834,10 +834,8 @@ impl Ui {
             #[cfg(all(target_os = "macos", hex_capture))]
             paste_preview: paste_picker::Preview::default(),
             capture: Capture::Idle,
-            vocabulary,
             preparing: None,
             draft_since: None,
-            groq_api_key: general::groq::draft(&settings.groq_api_key),
             duck_volume_drag: None,
             models: models::Models::default(),
             history: history::HistoryPane::default(),
@@ -848,7 +846,6 @@ impl Ui {
             agents: scrawl::Agents::default(),
             #[cfg(all(hex_capture, not(target_os = "macos")))]
             capture_folder: None,
-            modes,
             output: output::OutputPane::default(),
             picker: picker::Picker::default(),
             found: found::FoundState::default(),
@@ -965,7 +962,6 @@ impl Ui {
         Drafts {
             modes: modes.dictation_processing != settings.dictation_processing,
             vocabulary: self.vocabulary.project() != settings.vocabulary,
-            groq_api_key: general::groq::differs(self, &settings.groq_api_key),
             labs: self.lab_store.drafts(settings),
         }
     }
@@ -1151,9 +1147,7 @@ impl Ui {
             if !drafts.vocabulary && service.vocabulary != self.settings.vocabulary {
                 self.vocabulary.reload(&service.vocabulary);
             }
-            if !drafts.groq_api_key && service.groq_api_key != self.settings.groq_api_key {
-                general::groq::set_draft(self, &service.groq_api_key);
-            }
+            general::groq::follow_saved(self, &service.groq_api_key);
             // A lab field follows its lab and its saved text: only a saved
             // text that actually changed may reset the field, so any other
             // external save leaves its focus and caret alone. A lab toggled

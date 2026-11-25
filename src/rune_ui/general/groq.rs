@@ -27,6 +27,13 @@ pub(in crate::rune_ui) fn differs(ui: &Ui, key: &Option<GroqApiKey>) -> bool {
     crate::groq::draft_differs(key, &ui.groq_api_key.text)
 }
 
+pub(in crate::rune_ui) fn follow_saved(ui: &mut Ui, saved: &Option<GroqApiKey>) {
+    let current = ui.settings.groq_api_key.clone();
+    if !differs(ui, &current) && *saved != current {
+        set_draft(ui, saved);
+    }
+}
+
 const KEY_WIDTH: f32 = 280.0;
 const MODEL_WIDTH: f32 = 220.0;
 const PROVIDER_WIDTH: f32 = 160.0;
