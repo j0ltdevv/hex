@@ -806,7 +806,6 @@ impl Ui {
     fn with(settings: AppSettings, service: Service) -> Self {
         let modes = modes::ModesPane::new(&settings);
         let vocabulary = vocabulary::VocabularyEditor::new(&settings.vocabulary);
-        let groq_api_key = general::groq::draft(&settings.groq_api_key);
         Self {
             settings,
             #[cfg(test)]
@@ -838,7 +837,7 @@ impl Ui {
             vocabulary,
             preparing: None,
             draft_since: None,
-            groq_api_key,
+            groq_api_key: general::groq::draft(&settings.groq_api_key),
             duck_volume_drag: None,
             models: models::Models::default(),
             history: history::HistoryPane::default(),

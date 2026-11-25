@@ -35,6 +35,24 @@ pub(crate) fn closing_mark_required(
     crate::transcription::requires_closing_mark(selection.map(|selection| selection.model))
 }
 
+/// Builds the optional cloud request for a whole-capture dictation.
+pub(crate) fn request_for_dictation(
+    samples: &[f32],
+    selection: &crate::transcription::models::TranscriptionSelection,
+) -> Option<OwnedGroqRequest> {
+    (speech_provider() == SpeechProvider::Groq).then(|| {
+        let prompt = crate::dictation::vocabulary::for_dictation(|| {
+            crate::dictation::vocabulary::transcription_prompt(500)
+        });
+        OwnedGroqRequest::new(
+            samples.to_vec(),
+            Some(selection.language.clone()),
+            prompt,
+            groq_model(),
+        )
+    })
+}
+
 const ENDPOINT: &str = "https://api.groq.com/openai/v1/audio/transcriptions";
 const TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_AUDIO_BYTES: usize = 24 * 1024 * 1024;

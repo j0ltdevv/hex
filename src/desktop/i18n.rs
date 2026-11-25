@@ -1003,13 +1003,18 @@ mod tests {
     fn provider_copy_is_translated_in_every_table() {
         let main: std::collections::HashMap<_, _> = all_translations().copied().collect();
         let side = [
-            ("French", super::french::table()),
-            ("Portuguese", super::portuguese::table()),
-            ("Russian", super::russian::table()),
-            ("Hungarian", super::hungarian::table()),
+            super::FRENCH_COLUMN,
+            super::PORTUGUESE_COLUMN,
+            super::RUSSIAN_COLUMN,
+            super::HUNGARIAN_COLUMN,
         ];
         let traditional = super::traditional_chinese::table();
         for english in [
+            "Groq API key",
+            "Groq model",
+            "Whisper Large V3",
+            "Whisper Large V3 Turbo",
+            "Dictation provider",
             "Local",
             "Groq",
             "Paste Groq key",
@@ -1021,10 +1026,10 @@ mod tests {
                     .is_some_and(|row| row.iter().all(|text| !text.is_empty())),
                 "the main table has no complete {english:?}"
             );
-            for (language, table) in &side {
+            for column in side {
                 assert!(
-                    table.get(english).is_some_and(|text| !text.is_empty()),
-                    "{language} has no {english:?}"
+                    super::groq_side::translate(column, english).is_some(),
+                    "column {column} has no {english:?}"
                 );
             }
             assert!(
