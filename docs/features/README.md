@@ -4,9 +4,11 @@ What can the user do, how do they reach it, and what would prove it works?
 This maps existing behavior. [ROADMAP.md](../../ROADMAP.md) owns future work;
 [AGENTS.md](../../AGENTS.md) owns implementation invariants.
 
-Initial source baseline: September 1, 2026, `9e9da53aa9ed`. Public macOS release:
+> **Fork status:** this map documents the unofficial, source-only [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. It publishes no binaries or signed updates; upstream installers and release feeds install upstream Hex only. Every fork source build forces `HEX_LOCAL_BUILD=1` and never updates. The fork's Groq addition appears in the [Dictate map](#dictate) as `dictate.groq-cloud-fallback`, with details and an implementation map in [GROQ.md](../GROQ.md).
+
+Initial upstream source baseline: September 1, 2026, `9e9da53aa9ed`. Public macOS release:
 [2.3.1](../releases/2.3.1.md), with custom-domain downloads, a GitHub DMG mirror,
-and model-download recovery guidance. The initial map was source-only. Listed checks are
+and model-download recovery guidance. That baseline describes the upstream snapshot, not the current fork state, which adds an opt-in Groq dictation provider and source-only builds. Listed checks are
 locators unless an executed result is explicitly recorded, as in the
 [keyboard-layout verification](recovery.md#keyboard-layout-resolution).
 
@@ -19,7 +21,7 @@ Hex                                      // macOS release
 ├── Use the result                       // paste, paste-last, History
 ├── Adjust behavior                      // shortcut, microphone, recording preferences
 ├── Process text                         // Output tab + context-selected Modes
-├── Opt in                               // Meetings: off by default
+├── Opt in                               // Meetings: macOS only, off by default
 ├── Recover                              // prove the next attempt works
 └── Maintain the app                     // menu bar, login, updates, quit
 ```
@@ -91,12 +93,21 @@ The other capabilities stay here until they need their own verification recipe.
 
 ## Get Ready
 
-Install the signed macOS app with `brew install --cask anomalyco/tap/hex` or the
-[manual DMG](../../README.md#downloads). The cask uses a versioned, checksum-pinned
-DMG, requires Apple silicon/macOS 15+, and leaves updates to Hex's own updater. It does
-not require OpenCode, launch the app automatically, migrate the legacy
-Swift app's data, or forcibly replace an existing app destination. Homebrew uninstall
-leaves runtime settings, models, and retained data intact.
+This fork publishes no binaries. Clone `https://github.com/j0ltdevv/hex.git`
+and follow [Build from source](../../README.md#build-from-source) or the
+[Linux](../linux.md#install-from-source) /
+[Windows](../windows.md#build-and-run-this-fork-on-windows) guides. Source
+builds force `HEX_LOCAL_BUILD=1` and never check for or install updates.
+
+Upstream installs (`brew install --cask anomalyco/tap/hex` or a manual DMG)
+install upstream Hex, **not** this fork; see
+[build-from-source](../../README.md#build-from-source) for this fork's path.
+The cask uses a versioned, checksum-pinned DMG, requires Apple silicon/macOS
+15+, and leaves updates to upstream's updater. It does not require OpenCode,
+launch the app automatically, migrate the legacy Swift app's data, or forcibly
+replace an existing app destination. Homebrew uninstall leaves runtime
+settings, models, and retained data intact. The download map below is an
+upstream release-service reference only.
 
 ```ts
 Download Hex                              // setup.download-recovery
@@ -1979,6 +1990,8 @@ along with all twelve keyboard-layout child scenarios, formatting, and Clippy.
 The release Settings preview built and launched, but window screenshot capture
 failed; no visual or installed-app startup verification is claimed.
 
+
+**Upstream only:** the `maintain.updates` maps in this section describe signed upstream release builds. Fork source builds are local builds (`HEX_LOCAL_BUILD=1` forced by `.cargo/config.toml`): they never check for updates, offer no channel switch, and cannot install upstream releases.
 ```ts
 Hex checks the release service            // maintain.updates
 ├── 10 s after launch, hourly (Dev channel: every 10 min and on window focus), and Check for updates -> anoma.ly/release/hex/desktop/<channel>.json
@@ -2637,12 +2650,16 @@ as it is because the managed install layout, updater, shortcut, and login entry
 use it. The workaround is to hide the entry in Discord's Registered Games
 ([Windows guide](../windows.md#known-issues)). No check covers it.
 
-No Windows Meetings or local transcription API. See the
-[Windows guide](../windows.md) for the parity table, streaming notes, and
+No Windows Meetings or live Windows SDK observation. Meetings are macOS-only;
+the local transcription API and SDK host lifecycle are implemented in source
+(see the TypeScript SDK + local service map below), but no live Windows run
+has verified them.
+See the [Windows guide](../windows.md) for the parity table, streaming notes, and
 release flow; [check-windows](../../.github/workflows/check-windows.yml) builds,
 lints, and tests x64 and builds and tests ARM64 on every pull request. Physical
 smoke tests on Windows 10 and on ARM64 hardware have not been run.
 
+**Upstream only:** the Windows and Linux update maps below describe upstream release-service behavior. In this fork every source build is a local build, so the `Local build` row is the one that applies; there are no signed updates or channel switches.
 ```ts
 Linux updates                            // maintain.linux-updates
 ├── Direct install (versions/ + install.json receipt) -> release service -> staged -> sidebar footer: Restart to update

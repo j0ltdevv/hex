@@ -25,12 +25,14 @@ code, and can be captured like any other (`docs/windows.md`).
 The read-only `hex history` and `hex meetings list|show|chapters|search` commands, and
 `hex mcp`, read files rather than the running Hex; see `docs/transcript-cli.md`.
 
+> **Fork status:** this CLI documents the unofficial, source-only [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. Build from source; upstream installers and signed updates do not install this fork. Fork source builds force `HEX_LOCAL_BUILD=1`, so update commands report no update and cannot switch channels. Groq is opt-in for dictation only; Local stays the default.
+
 ## Commands
 
 ```ts
 hex
 ├── status                         what Hex is doing (see Status below)
-├── start                          open Hex if it isn't running (macOS Hex.app, else `hex app --hidden`); wait until it answers
+├── start                          open Hex if it isn't running (upstream macOS Hex.app, else `hex app --hidden`); fork source builds use the source-built binary; wait until it answers
 ├── quit [--force]                 refused while a meeting or dictation is active, or unconfirmed
 ├── restart [--force]              quit and reopen (opens Hex when it isn't running)
 ├── dictation start|stop|toggle
@@ -84,7 +86,7 @@ hex
 ├── screenshot [--pick]           Labs (macOS): shoot the display under the pointer and print the PNG's path; --pick opens the ⌘⇧4 picker
 ├── labs [on|off <feature>]       list Labs features or turn one on/off; edits settings.json (features/labs.md)
 │   └── link <feature>             macOS: print hex://labs/<feature>, the link that opens Hex's Labs page on that lab's group
-├── check-for-updates              check for an update now
+├── check-for-updates              check for an update now (upstream builds only; fork source builds report no update)
 ├── launch-at-login [on|off]       report or change Launch at Login (macOS: installed Hex.app only; Windows Run key; Linux XDG autostart)
 ├── completions <shell>            print a completion script for hex
 └── logs [--process] [-n N] [-f]   tail live.ndjson (or process.log); no running Hex needed
@@ -205,6 +207,10 @@ it is installed), and only a file with no speech at all answers `no-speech`
 stderr only when it is a terminal. Ctrl-C ends the command and its service,
 printing nothing, with exit 130. It never pastes, records History, runs mode
 processing, or logs the transcript.
+
+Groq applies only to shortcut dictation in this fork: `hex transcribe`,
+Meetings, and the local API's `/dictations` always stay local, even when
+`speech_provider` is `groq`. See [Groq in this fork](GROQ.md).
 
 `completions <shell>` prints a completion script for `hex` to stdout and
 nothing else. The script is
@@ -613,6 +619,15 @@ support this lab.
 - Optional settings take `none` to clear them.
 - `microphone` takes a device name exactly as Settings lists it, or
   `system-default` (or `none`) to follow the OS default input.
+- `speech_provider` takes `local` (the default: on-device only, no Groq
+  request even with a key saved) or `groq` (opt-in cloud dictation with Local
+  fallback). A saved key never enables Groq by itself.
+- `groq_model` takes `whisper-large-v3` (the default) or
+  `whisper-large-v3-turbo`; it applies only when `speech_provider` is `groq`.
+- `groq_api_key` is redacted in `settings list` and `settings get` and is
+  read-only here: CLI writes are rejected. Set the key through `GROQ_API_KEY`
+  or an owner-only `<data root>/groq.key`; the legacy saved setting is still
+  read as the last fallback. See [Groq in this fork](GROQ.md).
 - `avoid_bluetooth_microphone` (default on) makes System default record from
   the built-in microphone, else another wired or USB input, when the OS
   default is a Bluetooth headset, so its audio stays out of call quality (on
@@ -667,7 +682,9 @@ support this lab.
   channel it was published on), and checks for updates at once. Choosing
   another channel than the build's offers that channel's current release
   ("Switch to Stable 2.3.1" in the window); Hex installs it only once you
-  confirm there. Versions are never compared.
+  confirm there. Versions are never compared. This describes upstream
+  published builds: fork source builds force `HEX_LOCAL_BUILD=1`, report no
+  update, and cannot switch to an upstream release channel.
 - With the `capture` experiment, `capture.*` keys appear:
   `capture.enabled`, `capture.hotkey` (default `option+shift+s`),
   `capture.list_hotkey` (the capsule's send-to list, default
@@ -717,7 +734,7 @@ Writable keys: `release_microphone_while_idle`,
 `experimental.hex_microphone`, `experimental.hex_microphone_mode`,
 `experimental.hex_microphone_comfort_noise`,
 `experimental.hex_microphone_strength`, `enable_on_launch`,
-`paste_with_shift`, `ui_language`, `indicator_position`, `updates.channel`.
+`paste_with_shift`, `ui_language`, `indicator_position`, `speech_provider`, `groq_model`, `updates.channel`.
 
 `transcription.recognition_hints` is deprecated: recognition hints merged into
 the [vocabulary](features/vocabulary.md). `get` returns the vocabulary's terms,
@@ -751,8 +768,9 @@ fails when a new persisted setting has no key here.
 `CONTROL_VERSION` is 4. A change that breaks a request or reply shape
 increments it; adding a command, an optional request field, or a reply field
 does not. A `hex` from a different version gets `version-mismatch`; use the
-`hex` inside the running Hex.app, or restart Hex after updating. Version 2
-removed `permissions.input_monitoring` from the status reply; version 3 removed
+`hex` from this fork's source-built binary (no packaged Hex.app is
+published), or restart Hex after rebuilding. Version 2 removed
+`permissions.input_monitoring` from the status reply; version 3 removed
 `voice-action` and `features.voice_action`; version 4 removed `commands-retry`,
 `settings-set.confirm`, `window-show` `commands`, `capture.recording` `voice`,
 `features.commands`, and `features.command_model`.

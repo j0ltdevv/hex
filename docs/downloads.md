@@ -1,5 +1,7 @@
 # Download Hosting
 
+> **Fork status:** this document is an **upstream release-service reference** only. It describes Anomaly's hosts, installers, and signed update feeds; none of these paths download or install the unofficial [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. This fork publishes no binaries or updates: clone `https://github.com/j0ltdevv/hex.git` and follow [Build from source](../README.md#build-from-source) instead. Everything below is retained for upstream/release-service context.
+
 ## Public Paths
 
 ```ts
@@ -94,7 +96,7 @@ missing each failed naming the certificate, and with a dead proxy each named
 the refused proxy. Not observed: Windows' and macOS' system proxy settings on
 a real managed network (the Windows code is cross-compiled only).
 
-If the old update endpoint is blocked, install the new signed DMG manually.
+For upstream builds, if the old update endpoint is blocked, install the new signed DMG manually.
 After restoring model-host access, retry preparation in Settings. Transfer failures preserve partial downloads. App download
 success does not establish model-host reachability, and our external checks do
 not establish access from a particular enterprise network.

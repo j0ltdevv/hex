@@ -39,7 +39,11 @@ restart.
 The Settings card reads **Enabled** when the shortcut works system-wide in every
 app and **Disabled** when it does nothing.
 
-## Install
+> **Fork status:** this is the unofficial [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. It publishes no binaries or signed updates. The installer, signed updater, and release-service links in sections marked **upstream** describe upstream Hex and do not install this fork. Build this checkout from source to get the Groq provider; Local remains the default and Groq is opt-in for dictation only. No Windows native run of this fork has been verified.
+
+## Upstream installer (not provided by this fork)
+
+Everything in this section is upstream-only: `HexSetup.exe`, the anoma.ly scripts, and the signed managed update feed install upstream Hex, not this fork.
 
 x86_64 PCs need a 2013 or newer processor with AVX2 (Intel Haswell / AMD Excavator or later); on an older processor Hex shows a message and quits instead of starting.
 
@@ -65,10 +69,11 @@ PC; choose **More info**, then **Run anyway**.
 Intel graphics driver supplies (`vulkan-1.dll`). With a missing or older
 driver Hex still starts and decodes on the CPU, and Settings › Speech engine
 says so. **ARM64** decodes on the CPU. Both are
-self-contained: no Visual C++ Redistributable is required. Hex then keeps
-itself current through the signed update feed. Uninstalling removes every
-installed version, the shortcut, and Launch at login, and keeps settings and
-history in `%APPDATA%\hex` and logs and models in `%LOCALAPPDATA%\hex`.
+self-contained: no Visual C++ Redistributable is required. Upstream builds
+then keep themselves current through the signed update feed; this fork has
+no signed updater. Uninstalling removes every installed version, the
+shortcut, and Launch at login, and keeps settings and history in
+`%APPDATA%\hex` and logs and models in `%LOCALAPPDATA%\hex`.
 
 The installer and the script below create the same managed layout, so either
 can replace the other. For a scripted install:
@@ -130,6 +135,10 @@ whole clip. CPU devices (including ARM64) always use the whole-clip path. Set
 also set `TRANSCRIBE_CMAKE_ARGS=-DGGML_NATIVE=OFF`; without it ggml tunes its
 CPU kernels to the build machine and the binary can crash on older CPUs.
 
+For this fork, clone `https://github.com/j0ltdevv/hex.git` before setup; the
+checked-in `.cargo/config.toml` forces `HEX_LOCAL_BUILD=1`, disabling all
+update checks, downloads, and installs in source builds.
+
 An x64 PC below the release floor (for example Ivy Bridge: AVX and F16C, but no
 AVX2) can still build from source. In PowerShell:
 
@@ -154,6 +163,24 @@ powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1
 
 The script also installs `rustfmt`, Clippy, and rust-analyzer, fetches Cargo
 dependencies, and runs `cargo check --all-targets`.
+
+## Build and run this fork on Windows
+
+Clone this fork and use the prerequisites above (`.\scripts\setup-windows.ps1`):
+
+```powershell
+git clone https://github.com/j0ltdevv/hex.git
+cd hex
+cargo build --release --bin hex
+.\target\release\hex.exe --version
+.\target\release\hex.exe model install
+.\target\release\hex.exe app
+```
+
+With the binary on PATH, the last two commands are `hex model install` and
+`hex app`. `.cargo/config.toml` forces `HEX_LOCAL_BUILD=1`, so this binary
+never checks for, downloads, or installs updates: there is no signed fork
+updater, and upstream `HexSetup.exe` will not install the Groq provider.
 
 ## Smoke Test
 
@@ -335,10 +362,12 @@ the target but never links, builds transcribe.cpp, or runs anything.
 
 ## Local Transcription Service
 
-Not available on Windows in this build. The `windows-shell` branch generalized
-the authenticated local API (`service` and `service --embedded`) across
-platforms, but `dev` has since reshaped it for macOS; porting it onto that
-version is follow-up work.
+The authenticated local API (`service` and `service --embedded`) and the
+TypeScript SDK's host lifecycle are implemented in the shared source on
+Windows; see the [SDK and local service map](features/README.md) and the
+[SDK README](../sdk/typescript/README.md). This has not been verified in a
+live Windows run: earlier notes about porting the macOS service describe
+upstream history, not the current fork source.
 
 ## macOS Parity
 
@@ -365,15 +394,22 @@ current-user startup registry, UI Automation, and Windows capture APIs.
 | Vocabulary as Whisper and Qwen3-ASR's context prompt | Implemented |
 | Release microphone while idle | Implemented; mutually exclusive with audio pre-roll, as documented in Settings |
 | While-dictating audio control (mute other apps or pause media) | Implemented via WASAPI session volumes and GSMTC |
-| Signed automatic self-update for managed installs | Implemented for x64 and ARM64; the same ed25519 key and `https://anoma.ly/hex/files` origin as Linux, one feed per architecture, activating into a user-local versions directory. Checks 10 s after launch and every 6 h (or Check for updates); a staged update shows Restart to update in the tray menu and the window's sidebar footer, and the tray tooltip says an update is available. Source builds keep the GitHub release link (Download update); CI test builds never check |
+| Signed automatic self-update for managed installs | Upstream-only: implemented for x64 and ARM64 upstream builds; the same ed25519 key and `https://anoma.ly/hex/files` origin as Linux, one feed per architecture, activating into a user-local versions directory. Checks 10 s after launch and every 6 h (or Check for updates); a staged update shows Restart to update in the tray menu and the window's sidebar footer, and the tray tooltip says an update is available. Source builds keep the GitHub release link (Download update); CI test builds never check. This fork publishes no signed builds and forces `HEX_LOCAL_BUILD=1`, so its builds never check or install updates |
+| Groq provider (fork) | Code implemented for dictation; Local is the default and Local fallback is preserved; no Windows live observation of a Groq request. See [Groq in this fork](GROQ.md) |
 | Web-domain mode rules and browser context via UI Automation | Implemented; the page URL comes from the browser's UIA document element, bounded so a hung provider degrades to application-only context. Meeting detection reads the microphone-holding browser's own windows the same way (titles first, then document addresses, one read in flight within a 2 s deadline, never searching a page's content), so a Meet or Teams page is named by its site |
 | Meeting call detection and call site names | Implemented on the shared detector: Windows audio sessions and executables map to the macOS keys, and a browser's call page is read from its windows through UI Automation, with whole-window titles reduced to the page's (Edge's profile and other-tab count removed); not observed on a real Windows call |
-| Managed installer with Start Menu integration and clean uninstall | Implemented as `.github/release/install-windows.ps1`; it creates the self-updating versions layout, and updates retarget the managed shortcut, Desktop shortcuts and taskbar pins pointed at an old `versions\<version>\hex.exe` (and an icon from that version), and the Launch-at-login entry |
+| Managed installer with Start Menu integration and clean uninstall | Upstream-only: implemented as `.github/release/install-windows.ps1`; it creates the self-updating versions layout, and updates retarget the managed shortcut, Desktop shortcuts and taskbar pins pointed at an old `versions\<version>\hex.exe` (and an icon from that version), and the Launch-at-login entry |
 | First-run onboarding | Implemented; a fresh install picks a dictation language, downloads its recommended model with live progress, and starts listening only once setup is recorded — the shared first-run story, with a Microphone page only while the privacy switch is off and the practice game on the real shortcut |
 | Activity pane with the live session and recent dictations | Implemented in developer builds; the shared read-only pane (phases and timing; the event log keeps no dictated text) |
 | Developer Meetings and live drafts | Missing |
-| Local transcription API and public TypeScript SDK host lifecycle on Windows | Missing; see Local Transcription Service |
+| Local transcription API and public TypeScript SDK host lifecycle on Windows | Implemented in source; see the [SDK map](features/README.md) and [SDK README](../sdk/typescript/README.md); live Windows SDK verification still missing |
 | Streaming finish with whole-clip fallback | Implemented on GPU devices with Parakeet Unified English |
+
+**Groq in this fork:** Local is the default; a saved key alone never sends
+audio anywhere. Opting into Groq with a usable key sends the complete clip,
+language, and vocabulary prompt off the machine for one dictation attempt,
+with Local fallback on error, cancellation, or empty results. This has not
+been observed on a Windows PC; see [Groq in this fork](GROQ.md).
 
 Settings live in `%APPDATA%\hex\settings.json`, the same file macOS and
 Linux use.
@@ -409,11 +445,12 @@ in Release's check and stable channels; pull requests only compile x64. The rema
 parity slice is the developer-only Meetings surface after the physical matrix
 is green. Shared
 first-run onboarding, complete OpenCode mode rewriting controls, and the bounded
-TypeScript transformation host already ship. Windows releases are built for
-x64 and ARM64 by
+TypeScript transformation host already ship.
+Upstream releases are built for x64 and ARM64 by
 [`release.yml`](../.github/workflows/release.yml) with
 [`scripts/build-windows.sh`](../scripts/build-windows.sh), Authenticode-signed,
 and published to the Anomaly release service with the other platforms
 (`docs/releasing.md`); [`.github/release/install-windows.ps1`](../.github/release/install-windows.ps1)
-installs from its stable manifest. Users install
-with the command under [Install](#install).
+installs from its stable manifest. Upstream users install with the command
+under [Upstream installer](#upstream-installer-not-provided-by-this-fork);
+this fork publishes no installer, binaries, or signed updates.

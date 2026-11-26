@@ -4,6 +4,15 @@ Hex's own source is covered by the root `LICENSE`. The following notices cover
 vendored icon assets and the speech models Hex downloads under their own
 licences. Dependencies retain their respective upstream licenses.
 
+This repository is the unofficial `j0ltdevv/hex` fork of Hex. The upstream
+copyright and licence remain intact; fork modifications are covered by the
+root `LICENSE`.
+
+Groq is an external speech-to-text service and a trademark of Groq LLC and/or
+its affiliates. This fork is not affiliated with or endorsed by Groq. No Groq
+code, logo, or service implementation is vendored here; the application talks
+to the public Groq API only when the user explicitly selects the Groq provider.
+
 ## Parakeet Ultra
 
 Parakeet Ultra by Moondream, based on NVIDIA Parakeet TDT 0.6B v3. GGUF

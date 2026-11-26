@@ -32,6 +32,10 @@ elsewhere (KDE, GNOME). Shortcuts are general: the desktop's GlobalShortcuts por
 your desktop's own keybindings running `hex` commands (see
 [Shortcuts](#shortcuts)).
 
+> **Fork status:** this is the unofficial [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. It publishes no binaries. Building from this source checkout is the supported install path; the published-build, installer, and updater sections below describe **upstream Hex** and do not install this fork.
+>
+> Every source build sets `HEX_LOCAL_BUILD=1` (forced by `.cargo/config.toml`), so no fork build checks for, downloads, or installs updates. Groq is opt-in for dictation only; Local stays the default.
+
 With **Labs › Live typing** on (`labs.live_typing`, off by default), a hotkey
 dictation's provisional words are an underlined input-method preedit in the
 focused text field and the final text is committed through
@@ -76,8 +80,9 @@ and the shortcut is not registered; `hex typed-text` runs the same job from a
 desktop keybinding, and refuses clearly when the lab is off, Terminal paste
 shortcut is on, or Hex isn't listening.
 
-For Nix/NixOS, use the [Nix guide](nix.md). Nix owns updates to that installation;
-Hex's signed updater owns only the direct-install layout below.
+For Nix/NixOS, use the [Nix guide](nix.md). Nix owns updates to upstream's
+installation; upstream's signed updater owns only the direct-install layout
+below. This fork's source builds are local builds and never check for updates.
 
 ## One Hex Process
 
@@ -88,9 +93,11 @@ is optional: closing it stops neither dictation nor a model download, and
 launching Hex again opens it. When the desktop has a tray (a
 StatusNotifierItem host, such as Waybar, KDE, or Omarchy's bar), Hex shows a
 tray icon: click it to open the window, or use its menu: **Show Hex**,
-**Paste last dictation**, the downloaded speech models, the update once one
-is ready (**Restart to update**), **Enable / Disable Hex**, and **Quit Hex**;
-while Hex records or transcribes, the menu and tooltip say so. Hosts that draw
+**Paste last dictation**, the downloaded speech models, **Enable / Disable
+Hex**, and **Quit Hex**. Upstream builds also offer the update once one is
+ready (**Restart to update**); this fork's source builds never check for or
+install updates and show no such item. While Hex records or transcribes, the
+menu and tooltip say so. Hosts that draw
 theme icons, such as Plasma 6, GNOME's AppIndicator extension, and Waybar, draw
 a symbolic mark in the panel's own text color, so it stays visible on a light
 or dark panel. Plasma 6 recolors it only with icon themes that follow the color
@@ -212,14 +219,16 @@ window, each `Activate` opens or focuses it with the forwarded token (on
 Wayland through `xdg_activation_v1`; without a token most compositors only
 mark it urgent), and closing it keeps the window's state for the next open.
 
-## Install A Published Build
+## Upstream published builds (not provided by this fork)
 
 Published builds exist for x86_64 and ARM64, as a bare executable, a `.deb`,
 and an `.rpm`. They are built on Debian 12 and need glibc 2.36 or later:
 Debian 12, Ubuntu 23.04, Fedora 37, current Arch, or newer. ARM64 builds use
 Vulkan like x64 and fall back to the CPU.
 
-### Install script
+These builds are upstream artifacts from the Anomaly release service. None of the commands in this section installs this Groq fork; use [Install From Source](#install-from-source) instead.
+
+### Upstream install script (not this fork)
 
 The script installs the bare executable for your architecture into a
 user-local layout (`~/.local/share/hex`) that updates itself. It installs the
@@ -363,7 +372,7 @@ rustup default stable
 Build and install Hex as your desktop user:
 
 ```sh
-git clone https://github.com/anomalyco/hex.git
+git clone https://github.com/j0ltdevv/hex.git
 cd hex
 ./scripts/install-linux.sh
 ~/.local/bin/hex model install
@@ -373,12 +382,14 @@ cd hex
 Do not run the installer as root. It installs a user-local binary, desktop
 launcher, and autostart entry in the same layout as published builds, and
 marks the version as a source build (`source-build` beside the executable).
-The in-app updater never replaces a source build; Settings shows "Updated from
-your source checkout", and you update by pulling and running the installer
-again. Installing a published release over it switches back to signed
-updates. With a custom
-`HEX_APPLICATION_SUPPORT_DIR`, `cargo run --release` runs an
-unmanaged development Hex instead; without one it forwards to the installed Hex.
+In this fork `.cargo/config.toml` forces `HEX_LOCAL_BUILD=1`, so every source
+build is a local build: no update checks, downloads, or installs, even if an
+ambient environment variable would re-enable them. Settings shows a local
+build with updates off (`hex --version` reports the same), and you update by
+pulling this repository and running the installer again. Upstream published
+releases are a separate product and never install this fork. With a custom
+`HEX_APPLICATION_SUPPORT_DIR`, `cargo run --release` runs an unmanaged
+development Hex instead; without one it forwards to the installed Hex.
 
 ## Dictate
 
@@ -391,6 +402,18 @@ and needs a shortcut with a key).
 Start/Stop, and operational errors. Changing a shortcut or a setting the
 listener reads at start temporarily stops listening and restores the previous
 running state after the edit.
+
+### Groq dictation in this fork
+
+Local is the default and uses the on-device model with no network request even
+if a key is saved. Groq is opt-in: `hex settings set speech_provider groq` and
+a key through `GROQ_API_KEY` or an owner-only `<data root>/groq.key`. With a
+usable key at submission, the complete clip (plus language and vocabulary
+prompt) is sent to Groq while Local runs in parallel; errors, cancellation,
+or a missing key use the Local result. Only dictation can use Groq: Meetings,
+`/dictations`, and `hex transcribe` stay local. Live-cloud proof is one Linux
+path only; nothing has been observed on Windows or macOS. See
+[Groq in this fork](GROQ.md) for key precedence, privacy, and limits.
 
 Modes apply corrections, OpenCode rewriting, and transformations per
 application or website; the application picker lists `.desktop` entries. On
