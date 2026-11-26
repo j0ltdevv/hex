@@ -5,6 +5,29 @@ Groq. The choice is explicit, so a saved key never changes the base path by
 itself. Local is the upstream path; Groq is a cloud alternative for dictation
 only, with Local still available as the fallback.
 
+## Quickstart
+
+Local is already the default. To opt in:
+
+```sh
+hex start
+hex settings set speech_provider groq
+hex settings set groq_model whisper-large-v3
+```
+
+Provide a key with `GROQ_API_KEY`, an owner-only `<Hex data root>/groq.key`,
+or the masked Settings field. Then dictate normally. The provider actually used
+is logged as `groq` or `local`.
+
+Return to the unchanged local path with:
+
+```sh
+hex settings set speech_provider local
+```
+
+The CLI talks to the running Hex. Never put a real key in a shell history,
+issue, screenshot, test, or commit.
+
 ## Provider model
 
 `SpeechProvider` lives in `src/groq.rs` and has two variants: `Local` and
@@ -57,18 +80,20 @@ Whitespace-only values are skipped, so a blank environment value does not
 erase a saved key or turn on a request. The environment value is not written
 back to settings.
 
-`groq.key` is owner-only: `write_key_file` creates it as Unix `0600` in a
-`0700` directory, and `read_key_file` rejects group/world-readable files and
-files not owned by the current user on Unix. It contains just the key text;
-do not put quotes, comments, or other settings in it. The legacy setting
-remains supported for older installs and remains redacted on CLI reads.
+`groq.key` is owner-only. The tested `write_key_file` helper creates it as Unix
+`0600` in a `0700` directory, and `read_key_file` rejects group/world-readable
+files, files not owned by the current user on Unix, and symlinks. The current
+Settings UI does not call that writer; it saves the legacy setting instead. A
+user-created `groq.key` contains just the key text, with no quotes or comments.
+The legacy setting remains supported for older installs and remains redacted on
+CLI reads.
 
-`key_status()` reports only the source category (`None`, `Environment`,
-`KeyFile`, `Settings`, or `Blocked`) for UI display; it never returns key
-bytes. `GroqApiKey` has secret-safe `Debug`, and neither the key nor the key
-file contents appear in logs, diagnostics, multipart fields, or tests. The
-`hex settings` list/get output redacts `groq_api_key`, and CLI writes to it are
-rejected.
+`key_status()` is an internal status-only helper returning `None`, `Environment`,
+`KeyFile`, `Settings`, or `Blocked`; it never returns key bytes and currently has
+no production UI consumer. `GroqApiKey` has secret-safe `Debug`, and neither the
+key nor key-file contents appear in logs, diagnostics, multipart fields, or
+tests. The `hex settings` list/get output redacts `groq_api_key`, and CLI writes
+to it are rejected.
 
 **Isolation:** with `HEX_APPLICATION_SUPPORT_DIR` pointing at an overridden
 data root and `HEX_GROQ_ALLOW_SYSTEM_KEYS=0`, system-level credentials are
@@ -148,9 +173,9 @@ source.
 | `src/control/settings/registry.rs` | `speech_provider` as a `local`/`groq` choice; read-only/redacted API-key setting. |
 | `src/control/settings.rs` | Choice apply/get for the provider and redaction/CLI-write rejection for the key. |
 | `src/control/settings/choice_tests.rs` | Drift guard tying the CLI choice to `SpeechProvider::ALL`. |
-| `src/rune_ui/general/groq.rs` | Provider picker, masked key field, model picker, and local/Groq descriptions. |
-| `src/desktop/i18n/strings.rs`, `french.rs`, `hungarian.rs`, `portuguese.rs`, `russian.rs` | Translations for every new provider string; Traditional Chinese derives from the Simplified column in `traditional_chinese.rs`. |
-| `src/transcription/engine.rs` | Restored local paths, closing-mark metadata, and a cloneable job cancellation for cloud work. |
+| `src/rune_ui/general/groq.rs` | Provider picker, masked key field, model picker, and local/Groq descriptions; cloud-only fields render only in Groq mode. |
+| `src/desktop/i18n.rs`, `strings.rs`, `groq_side.rs`, `french.rs`, `hungarian.rs`, `portuguese.rs`, `russian.rs` | Completeness scan and translations for every provider string; Traditional Chinese derives from the Simplified column. |
+| `src/transcription/engine.rs` | Shared `accept_cloud_text(text, closing_mark_required)` validation contract; local streaming and fallback remain upstream-owned. |
 | `src/linux/dictation.rs`, `src/windows/dictation.rs`, `src/windows/dictation/finish.rs`, `src/windows/dictation/output.rs` | Linux/Windows provider gate, submission-time key snapshot, off-worker request start, cancellation, provider logging, and ordered Local-fallback settlement. |
 | `src/parakeet.rs` | macOS dictation worker uses the same shared `PendingGroq` helper and provider logging; `/dictations` and other service targets stay local. |
 | `docs/GROQ.md` | This behavior, evidence limits, and sync guidance. |
@@ -194,7 +219,7 @@ TRANSCRIBE_CMAKE_ARGS='-DTRANSCRIBE_VULKAN=OFF -DTRANSCRIBE_USE_SYSTEM_BLAS=OFF'
 TRANSCRIBE_CMAKE_ARGS='-DTRANSCRIBE_VULKAN=OFF -DTRANSCRIBE_USE_SYSTEM_BLAS=OFF' cargo test --locked --bin hex control::settings
 TRANSCRIBE_CMAKE_ARGS='-DTRANSCRIBE_VULKAN=OFF -DTRANSCRIBE_USE_SYSTEM_BLAS=OFF' cargo check --locked --bin hex
 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
-  HEX_UPDATE_GOLDENS=1 cargo test --locked --bin hex rune_ui::tests::goldens
+  HEX_UPDATE_GOLDENS=1 cargo test --locked --bin hex rune_ui::tests::panes::platform_goldens
 ```
 
 `TRANSCRIBE_CMAKE_ARGS='-DTRANSCRIBE_VULKAN=OFF -DTRANSCRIBE_USE_SYSTEM_BLAS=OFF'`
@@ -252,3 +277,6 @@ the unchanged History schema, and the Advanced Dictation layout. Do
 not resolve a conflict by removing the Local default or fallback, widening
 Groq to non-dictation work, changing History's source labels, or making the
 key writable or visible in generic settings output.
+
+The full repeatable merge workflow, net-patch fallback, hotspot table, and sync
+recording checklist live in [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md).

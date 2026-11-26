@@ -1,77 +1,88 @@
-# Project Documentation
+# Project documentation
 
-Start with the document for your task. Plans and archived prototypes do not
-override shipped behavior.
+This is the unofficial [`j0ltdevv/hex`](https://github.com/j0ltdevv/hex) fork.
+It builds from source, keeps Hex local by default, and adds an opt-in Groq
+dictation provider. Upstream plans and release-service documents describe the
+base project, not a fork binary distribution.
 
-## User Guides
+## Start here
 
-- [`../README.md`](../README.md): install and use Hex on macOS, Windows, and Linux.
-- [`windows.md`](windows.md): Windows x64 and ARM64 beta requirements, installation, and source builds.
-- [`linux.md`](linux.md): Linux X11 and native Wayland beta requirements and installation.
+- [`../README.md`](../README.md): fork identity, privacy, Groq quickstart,
+  platform prerequisites, tests, and known limits.
+- [`FORK.md`](FORK.md): what changes, what stays upstream, source-only policy,
+  data locations, verification status, and support.
+- [`GROQ.md`](GROQ.md): provider behavior, key precedence, request bounds,
+  cancellation/fallback, implementation map, and evidence limits.
+- [`UPSTREAM-SYNC.md`](UPSTREAM-SYNC.md): repeatable merge workflow, conflict
+  hotspots, checks, and sync recording.
+- [`../CHANGELOG.md`](../CHANGELOG.md): fork-specific changes and verification.
+
+## User guides
+
+- [`linux.md`](linux.md): Linux X11 and native Wayland requirements, source
+  installation, shortcuts, and recovery. Published Anomaly builds are labelled
+  upstream-only.
+- [`macos.md`](macos.md): macOS source prerequisites, unsigned local app build,
+  CLI linking, identity caution, and verification limits.
+- [`windows.md`](windows.md): Windows x64 and ARM64 source builds, runtime
+  behavior, and known issues. Official Hex installers are upstream-only.
 - [`nix.md`](nix.md): Nix packaging for Linux, development, and per-user autostart.
+- [`cli.md`](cli.md): the `hex` control CLI, settings, dictation commands, logs,
+  and wire protocol. Fork source builds cannot check or install updates.
 - [`../ios/README.md`](../ios/README.md): build and test the iOS prototype.
 - [`../sdk/typescript/README.md`](../sdk/typescript/README.md): use the public
-  TypeScript transcription SDK with an explicitly supplied native helper.
+  TypeScript transcription SDK with an explicitly supplied native helper. The
+  helper is local-only; Groq is never used by the SDK or local API.
 
-## Engineering Reference
+## Engineering reference
 
-- [`../AGENTS.md`](../AGENTS.md): architecture, invariants, development
-  commands, and diagnostics. This is the implementation authority.
-- [`../ROADMAP.md`](../ROADMAP.md): prioritized product and engineering work.
+- [`../AGENTS.md`](../AGENTS.md): upstream architecture, invariants,
+  development commands, and diagnostics. This remains the implementation
+  authority; fork deltas are documented in `GROQ.md` and `UPSTREAM-SYNC.md`.
+- [`../ROADMAP.md`](../ROADMAP.md): upstream product and engineering work.
 - [`design-system.md`](design-system.md): Rune + `rune-kit` + OpenCode theme
   components, Hex pieces, copy rules, and `--snap` scene verification.
-- [`features/README.md`](features/README.md): existing user-facing capabilities,
-  entry points, available verification, and gaps; detailed dictation and recovery maps.
-- [`perf.md`](perf.md): strobe benchmarks, the cases that drive the window
-  through its accessibility tree, and how a benchmarked copy of Hex stays
-  isolated.
-- [`downloads.md`](downloads.md): public download paths, R2 custom domains,
-  GitHub release mirrors, and network recovery.
+- [`features/README.md`](features/README.md): user-facing capabilities,
+  entry points, available verification, and gaps.
+- [`perf.md`](perf.md): strobe benchmarks and isolated benchmark copies.
 - [`opencode-compatibility.md`](opencode-compatibility.md): audited OpenCode V2
   source and CLI baseline, integration contract, and validation limits.
-- [`plans/personal-commands.md`](plans/personal-commands.md): shipped personal
-  command contract and remaining lifecycle work.
-- [`plans/quickjs.md`](plans/quickjs.md): why and how configs run in embedded
-  QuickJS instead of Bun, with size and latency measurements.
 - [`specs/local-transcription-service.md`](specs/local-transcription-service.md):
-  implemented macOS local-service protocol and lifecycle guarantees.
-- [`specs/hex-words.md`](specs/hex-words.md): the Hex words file (`.hexwords`)
-  that carries vocabulary and word replacements between the desktop, iPhone and
-  Android apps, with shared cases in `tests/fixtures/hex-words`.
+  local-service protocol and lifecycle guarantees.
+- [`specs/hex-words.md`](specs/hex-words.md): the `.hexwords` vocabulary and
+  replacement format shared across desktop and mobile.
 
-## Architecture Decisions And Active Plans
+## Upstream and historical material
 
-- [`plans/rune-ui.md`](plans/rune-ui.md): implemented; Rune desktop UI port,
-  surfaces, goldens, and remaining real-window checklist.
-- [`plans/single-process.md`](plans/single-process.md): implemented; one Hex
-  process per user on macOS, Windows, and Linux hosting Rune windows and overlays.
-- [`plans/rune-dependency.md`](plans/rune-dependency.md): decision record for
-  Rune as a public MIT Git dependency and Nix output-hash updates.
-- [`plans/shared-desktop-ui.md`](plans/shared-desktop-ui.md): implemented; how
-  macOS, Windows, and Linux share one window and one settings file.
-- [`plans/swift-app-handoff.md`](plans/swift-app-handoff.md): manual download
-  handoff from Swift, without data import or automatic replacement.
-- [`plans/typescript-sdk.md`](plans/typescript-sdk.md): published SDK status,
-  remaining signed-helper packaging, and first-consumer validation.
-- [`plans/linux.md`](plans/linux.md): Linux X11/Wayland validation and later capability
-  slices.
-- [`plans/meeting-live-transcription.md`](plans/meeting-live-transcription.md):
-  evaluation of Apple SpeechTranscriber vs Moonshine for live meeting drafts.
-- [`plans/granola-import.md`](plans/granola-import.md): research on importing
-  historical Granola meetings into `hex mcp`.
+These documents describe Anomaly's release infrastructure or earlier upstream
+plans. They are useful engineering context, not installation paths for this
+source-only fork:
 
-When a plan disagrees with `AGENTS.md` about shipped behavior, update the plan.
-
-## Research And Archives
-
-- [`research/transcription-benchmark.md`](research/transcription-benchmark.md):
-  historical benchmark method and measurements.
+- [`downloads.md`](downloads.md): Anomaly release-service and download hosting.
+- [`releasing.md`](releasing.md): upstream release workflow and credentials.
+- [`windows-signing.md`](windows-signing.md): upstream Authenticode signing.
+- [`plans/`](plans/): upstream architecture decisions and active plans.
+- [`research/`](research/): historical research and measurements.
 - [`../prototypes/app-shell/README.md`](../prototypes/app-shell/README.md):
   archived app-shell comparison prototype.
 
+When a plan disagrees with `AGENTS.md` about shipped behavior, update the plan.
+When upstream documentation conflicts with this fork's source-only or Groq
+contract, the fork documents above take precedence for this repository.
+
+## Support
+
+- Issues: <https://github.com/j0ltdevv/hex/issues>
+- Private vulnerability reports:
+  <https://github.com/j0ltdevv/hex/security/advisories/new>
+- Security guidance: [`../SECURITY.md`](../SECURITY.md)
+- Contribution workflow and checks: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
+
+Never include a real API key, private transcript, vocabulary/screen-term text,
+or unredacted diagnostic log.
+
 ## Releases
 
-`releases/` contains version-specific release notes and drafts. `../release-notes/` contains legacy inputs from versions
-2.0.0 through 2.0.9. Published notes and the SDK changelog describe their release,
-not current behavior; preserve them as historical records. A draft note is not
-evidence that its release has been published.
+This fork has no published binary release. `docs/releases/` and
+`../release-notes/` are upstream historical notes. They do not describe a fork
+artifact or prove that a fork build was published.

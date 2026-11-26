@@ -13,6 +13,17 @@ consumers must currently supply an explicit native command. The examples below
 use the HEX executable's `service --embedded` mode; users do not need to launch
 the HEX desktop app. This package alone is not yet a turnkey native distribution.
 
+## Fork status
+
+This SDK README describes the library as used with the unofficial, source-only
+[j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. The fork's
+`hex service --embedded` helper is **local-only**: Groq is never used by the
+SDK or its helper, even when dictation uses Groq elsewhere. The fork publishes
+no packaged helper; supply the path to a binary built from this checkout, for
+example `command: ["/path/to/hex-fork/target/release/hex", "service", "--embedded"]`.
+`@kitlangton/hex` 0.3.1 remains an upstream-published package, not a fork
+release.
+
 ## Promise API
 
 Pass a model to `create()` to get a ready-to-use transcriber:
@@ -223,10 +234,20 @@ observations automatically.
 - Encode PCM WAV in the host. Do not send compressed recordings such as M4A or
   WebM and label them as WAV. The service accepts 8-192 kHz audio with 1-8 channels,
   subject to a 64 MiB upload limit and separate source-frame and normalized-audio
-  budgets. See the [service spec](https://github.com/anomalyco/hex/blob/dev/docs/specs/local-transcription-service.md#wire-protocol-api-2)
+  budgets. See the [local service spec](../../docs/specs/local-transcription-service.md#wire-protocol-api-2)
   for the exact limits; there is no promise of unlimited clip length.
 - Persist the host's model selection in the host, not in HEX desktop preferences.
 - Spawn the signed helper directly. Do not use LaunchServices, `open`, or
   `NSWorkspace`. Validate native packaging/signing in the final consuming app.
 - Never expose the startup bearer token to renderer or web content. Credentials
   are exchanged over the child pipe and used for authenticated loopback requests.
+
+## Developing the SDK
+
+From `sdk/typescript`:
+
+```sh
+bun run check
+bun run test
+bun run build
+```
