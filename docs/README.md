@@ -30,9 +30,14 @@ base project, not a fork binary distribution.
 - [`cli.md`](cli.md): the `hex` control CLI, settings, dictation commands, logs,
   and wire protocol. Fork source builds cannot check or install updates.
 - [`../ios/README.md`](../ios/README.md): build and test the iOS prototype.
+- [`../android/README.md`](../android/README.md): build and test Hex Mobile on Android.
 - [`../sdk/typescript/README.md`](../sdk/typescript/README.md): use the public
   TypeScript transcription SDK with an explicitly supplied native helper. The
   helper is local-only; Groq is never used by the SDK or local API.
+- [`../site/public/docs/transforms.md`](../site/public/docs/transforms.md):
+  TypeScript transformation API (`~/.config/hex/hex.config.ts`).
+- [`../site/public/docs/admin.md`](../site/public/docs/admin.md): macOS
+  managed-preference feature locks (`anomaly.hex`).
 
 ## Engineering reference
 
@@ -51,6 +56,13 @@ base project, not a fork binary distribution.
   local-service protocol and lifecycle guarantees.
 - [`specs/hex-words.md`](specs/hex-words.md): the `.hexwords` vocabulary and
   replacement format shared across desktop and mobile.
+- [`transcript-cli.md`](transcript-cli.md): read-only `hex history` and
+  `hex meetings` JSON contracts.
+- [`streams.md`](streams.md): live `/streams` pushed-audio transcription contract.
+- [`hex-annotation.md`](hex-annotation.md): `.hexannotation` v1 package format,
+  legacy `.scrawl` discovery, and router boundaries.
+- [`test-builds.md`](test-builds.md): unsigned per-push `Hex Test` artifacts and
+  isolated `hex-test` data root.
 
 ## Upstream and historical material
 
@@ -61,6 +73,8 @@ source-only fork:
 - [`downloads.md`](downloads.md): Anomaly release-service and download hosting.
 - [`releasing.md`](releasing.md): upstream release workflow and credentials.
 - [`windows-signing.md`](windows-signing.md): upstream Authenticode signing.
+- [`plans/release-service.md`](plans/release-service.md): Anomaly release service
+  target names, `install.json` receipt, and updater client rules.
 - [`plans/`](plans/): upstream architecture decisions and active plans.
 - [`research/`](research/): historical research and measurements.
 - [`../prototypes/app-shell/README.md`](../prototypes/app-shell/README.md):
@@ -83,6 +97,8 @@ or unredacted diagnostic log.
 
 ## Releases
 
-This fork has no published binary release. `docs/releases/` and
-`../release-notes/` are upstream historical notes. They do not describe a fork
-artifact or prove that a fork build was published.
+This fork has no published binary release. [`releases/`](releases/) holds
+upstream versioned release notes (`docs/releases/<X.Y.Z>.md`, now 3.5.x) that
+generate upstream `/hex/changelog` and gate its stable releases. Preserve them
+as historical records; they do not describe a fork artifact or prove that a
+fork build was published.

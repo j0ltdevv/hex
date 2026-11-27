@@ -63,6 +63,8 @@ impl Status {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Turn {
     pub(super) mine: bool,
+    /// The remote speaker's name, when the meeting could name them.
+    pub(super) name: Option<crate::meeting::SpeakerName>,
     pub(super) start_ms: u64,
     pub(super) text: String,
     /// A silence of 30 s or more before this turn.
@@ -235,15 +237,9 @@ pub(super) fn length(milliseconds: u64) -> String {
 /// Speaker turns as Markdown, delegating to the canonical meeting renderer.
 fn transcript_markdown(turns: &[Turn], imported: bool) -> String {
     crate::meeting::render_turns_markdown(
-        turns.iter().map(|turn| {
-            let source = if turn.mine {
-                crate::meeting::MeetingSource::Microphone
-            } else {
-                crate::meeting::MeetingSource::System
-            };
-            (source, turn.start_ms, turn.text.as_str())
-        }),
-        imported,
+        turns
+            .iter()
+            .map(|turn| (turn.label(imported), turn.start_ms, turn.text.as_str())),
     )
 }
 
@@ -903,7 +899,7 @@ fn empty_state(ui: &Ui, p: Paint) -> El {
     let where_kept = match kept {
         MeetingRetention::Forever => tr("Meetings stay on this Mac.").to_owned(),
         kept => tr_fill(
-            "Meetings stay on this Mac and move to the Trash after {}.",
+            "Kept in Hex on this Mac for {}, then moved to the Trash. Exported Markdown stays.",
             tr(kept.label()),
         ),
     };
@@ -1026,10 +1022,12 @@ fn copy_buttons(p: Paint, pane: &MeetingsPane, meeting: &Meeting) -> [El; 2] {
                     return;
                 };
                 let text = if what == "prompt" {
-                    format!(
-                        "Use my Hex meeting {:?} as context.\n\nRead its notes and transcript:\n  hex meetings show {} --md\n",
+                    let recording = (meeting.status == Status::Recording)
+                        .then(|| meeting.turns().last().map_or(0, |turn| turn.start_ms));
+                    super::meeting_capsules::meeting_agent_prompt(
+                        &meeting.id,
                         shown_title(meeting),
-                        meeting.id,
+                        recording,
                     )
                 } else {
                     transcript_markdown(meeting.turns(), meeting.imported)
@@ -1105,6 +1103,7 @@ mod tests {
     fn an_imported_meeting_labels_its_one_track_speaker() {
         let turn = |mine| Turn {
             mine,
+            name: None,
             start_ms: 1_000,
             text: "Hi.".into(),
             pause_before_ms: None,

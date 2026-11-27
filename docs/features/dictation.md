@@ -83,7 +83,8 @@ than a few points (panning, autoscroll) never counts, and every middle click,
 long or short, still reaches the app in front. A mouse-started capture is the dictation
 shortcut's, so its next press finishes it too; a long press finishes a capture
 the shortcut (or Caps Lock) locked, keeping that capture's output settings. A
-held press, a pending double tap, or an Annotate recording is left alone. While
+held press or a pending double tap is left alone; an Annotate recording never
+holds one back (it records on beside the dictation). While
 the lab is on, Escape cancels any hands-free dictation in every shortcut mode
 and is kept from the app in front, a terminal included; off, the usual cancel
 rules apply. Not verified on hardware; details and checks in
@@ -126,6 +127,27 @@ reach X11 grabs as keysyms 0xff67/0xff13/0xff14 and the portal as `Menu`,
 recorder refuses them, and a saved shortcut on one goes back to its default
 when settings load or the toggle turns off. On, the window's recorder takes
 them too (#1187). Details and checks in [labs.md](labs.md).
+
+Windows: Caps Lock may be a shortcut's key alone out of the box, with
+Labs › Special keys alone off (`hex settings set
+dictation_hotkey capslock`, or press it in the window's recorder). The
+listener keeps every Caps Lock press the shortcut fires on, and the recorder's
+own hook keeps a press made in Hex's window, so the lock never flips; with
+other modifiers held, Caps Lock still reaches Windows unless that chord is
+bound too. Saving, loading, or turning the Lab off keeps a Caps Lock shortcut.
+Insert, Home, End, Page Up, and Page Down alone still need the Lab: off, the
+recorder shows "Add a modifier", `hex settings` refuses them, and a saved
+one goes back to its default. Implemented
+November 26, 2026 from a user report; not yet run on a Windows keyboard.
+Checks: `the_recorder_keeps_a_whole_caps_lock_press_made_in_hexs_window`
+(`windows/input/chord.rs`) and
+`pause_and_scroll_lock_stand_alone_but_numpad_keys_need_a_modifier`
+(`windows/input.rs`). Labs-off acceptance and repair checks:
+`recorder_accepts_caps_lock_without_the_special_keys_lab` (`rune_ui/settings.rs`),
+`caps_lock_alone_needs_no_lab_on_windows_but_navigation_still_does`
+(`control/settings.rs`), and
+`caps_lock_survives_save_and_load_with_the_special_keys_lab_off`
+(`app_settings/shortcut_repair.rs`).
 
 Linux and macOS with Labs › § key alone on (`labs.section_key_alone`,
 off by default; issue 1050): the ISO section key, left of 1, may be a
@@ -630,9 +652,10 @@ was not compiled or run here (Linux check, Windows cross-clippy only).
 
 On macOS a raw capture never reaches the processing worker at all
 (`parakeet::run_inference_worker` queues only Paste, Copy only, and Print; the
-raw targets go straight to output), so it also skips Labs › Clean up with
-Apple Intelligence and Labs › Neutral voice ([labs.md](labs.md)); elsewhere
-that stage is macOS-only, so it never runs on the shared pipeline either.
+raw targets go straight to output), so it also skips Labs › Clean up what I
+say, Labs › Clean up with Apple Intelligence, and Labs › Neutral voice
+([labs.md](labs.md)); elsewhere those stages are macOS-only, so they never run
+on the shared pipeline either.
 
 ### Transform Typed Text (Labs, Linux)
 
@@ -713,6 +736,36 @@ text is read through `wl-paste`, which may briefly take focus. Proof limits: no
 shortcut press against a real target application was run; the flow is covered
 by unit tests only.
 
+### Clean Up What I Say (Labs, macOS)
+
+While Labs › Clean up what I say is on (`labs.cleanup_tagger`, off by
+default), each English dictation loses its ums, repeated words, false starts,
+and spoken corrections on this Mac, with the small cleanup model the iPhone
+app uses.
+
+```text
+Corrected transcript (speech Labs, then Global's and the mode's corrections)
+  -> Labs > Clean up what I say          // macOS, English only
+     ├── Not English ("auto" too), Verbatim style, numbers alone, typed text,
+     │   Neutral voice, a voice prompt   -> skipped, nothing recorded
+     ├── Words -> chunks -> tagger (Core ML, CPU only, 150 ms)
+     │   -> guard (keeps names, numbers, and vocabulary terms that were not
+     │      corrected out loud) -> render
+     ├── Model still downloading, late, or failing
+     │   -> the corrected words as heard, and History says why
+     └── Only ever removes words that were heard
+  -> Clean up with Apple Intelligence, or the mode's OpenCode rewrite
+  -> Dictation style -> Transformations -> Paste
+```
+
+The model (26 MB) is not in the app: it downloads from Hex's GitHub release
+the first time a capture starts with the lab on, is checked against a pinned
+SHA-256 before it is unpacked, and lives in `<models>/cleanup/`. With the lab
+off nothing is fetched or loaded. One copy stays loaded while the lab is on,
+and Labs › Free memory when idle frees it with the speech model. See
+[labs.md](labs.md) for the stage, the install, the fallbacks, and the checks.
+Not observed: a real dictation through the running app with the lab on.
+
 ### Rewrite With Nearby Text (Labs, macOS)
 
 While Labs › Rewrite reads nearby text is on (`labs.cursor_context`, off by
@@ -748,8 +801,8 @@ do they say Default and Use OpenCode default, because then OpenCode's own
 default answers. `live.ndjson` and History's processing observation record the
 rewrite model as `provider/id` in a `model` field, omitted when no model was
 named (OpenCode's own default answered, Hex's automatic choice failed before any
-model answered, or the on-device Apple Intelligence cleanup or Neutral voice
-pass ran). The "dictation
+model answered, or the on-device Apple Intelligence cleanup, Neutral voice
+pass, or cleanup tagger ran). The "dictation
 post-processing" and "voice prompt" completed and failed log lines name it too:
 `provider/id` for the named model that answered, or on failure the one the
 request asked for; `opencode default` when no model was named and OpenCode's
@@ -896,8 +949,16 @@ picker (closing one that is open) and the writer. Check:
 
 ```ts
 Tap, Paste Last menu, or hex paste-last → newest ready, noncancelled dictation or marked annotation
-Hold 200 ms on the Mac event tap → up to eight recent items, without taking focus
-├── Rows are read from the press, so the picker fades in as the hold passes
+Hold 200 ms on the Mac event tap → recent items, without taking focus
+├── Rows are read from the press, so the picker fades in as the hold passes: the
+│   newest 16 first, then up to 300 read after it opens, the selection kept on its
+│   item (each capture is a manifest read, so the deep list never delays opening)
+├── The rail shows eight rows and scrolls through the rest: wheel, trackpad, and
+│   ↑/↓ (the selection scrolls into view); only rows in view are built, so only
+│   their pictures load. With ⌥⇧ still held a mouse wheel turns sideways (macOS
+│   turns it before Rune sees it), and the rail turns it back (paste_picker/wheel.rs)
+├── Works while an Annotate capture or a meeting records: neither stops, and the
+│   capture records none of the picker's clicks, scrolls, or keys (nor inks them)
 ├── Centred on the display under the pointer; stays open once the keys come up
 ├── Rows down a rail (a capture's picture or a dictation's mark, first words, kind · age)
 │   beside the selected row's preview: a capture's first keyframe (else its contact
@@ -914,16 +975,27 @@ Hold 200 ms on the Mac event tap → up to eight recent items, without taking fo
 └── Escape, a click outside the card, another key, or changed focus → close without touching the clipboard
 ```
 
-Check: `a_tap_pastes_and_a_hold_opens_a_picker_that_stays_until_escape` and
-`a_click_selects_a_second_pastes_and_a_capture_opens_in_its_editor` in
-[paste/browse.rs](../../src/paste/browse.rs). Scenes: `mac-paste-picker` (a
+Check: `a_tap_pastes_and_a_hold_opens_a_picker_that_stays_until_escape`,
+`a_click_selects_a_second_pastes_and_a_capture_opens_in_its_editor`,
+`the_deep_list_replaces_the_first_rows_and_keeps_the_selection_on_its_item` and
+`an_open_picker_keeps_its_clicks_scrolls_and_keys_out_of_a_capture` in
+[paste/browse.rs](../../src/paste/browse.rs);
+`the_first_rows_open_and_the_deep_list_reaches_far_back` in
+[paste/recent.rs](../../src/paste/recent.rs); the rail's wheel, Shift-turned
+wheel, click, and key-reveal tests in
+[rune_ui/paste_picker/tests.rs](../../src/rune_ui/paste_picker/tests.rs);
+`paste_last_taps_and_holds_while_annotate_records` in
+[recognition/paste_picker.rs](../../src/recognition/paste_picker.rs) and
+`the_paste_picker_works_over_annotate_and_meetings` in
+[recognition.rs](../../src/recognition.rs). Not run on a real Mac: a physical
+wheel with ⌥⇧ held over the panel, and ⌥⇧V over a live capture or meeting. Scenes: `mac-paste-picker` (a
 capture selected) and `mac-paste-picker-dictation`, on fixture rows and drawn
 pictures. Not yet run natively: a real capture's picture loading from its
 bundle, Copy, and Open in Editor from the picker.
 
 With it on, the Mac History puts dictations, annotations, screenshots and
 screen recordings in one list. All types is the default. Search works inside the
-selected type and beyond the eight picker rows. Capture files keep their
+selected type and beyond the picker's rows. Capture files keep their
 editor, copy, reveal, drag and Trash actions. Clear dictation history affects
 the dictation owner only. A shared-library bundle can be visible without
 being eligible for global paste; that needs the Hex writer's ready receipt.
@@ -2708,8 +2780,9 @@ as flags-changed events 15 ms apart did not help. When the frontmost app has
 one of those identifiers, Hex types the dictation instead: one Unicode scalar
 per key down/up pair, each carrying the key the active layout types that
 character with, Shift as its own flags-changed events around a character that
-needs it, 4 ms between every posted event, and every line break as
-Shift-Return. Nothing is captured for a clipboard restore, so the clipboard is
+needs it, 50 ms before the first posted event so the client and the
+session's focused control have settled and keep the first character (#2942),
+4 ms between every later event, and every line break as Shift-Return. Nothing is captured for a clipboard restore, so the clipboard is
 left as it was; Labs › Keep dictation on clipboard still writes the typed text
 to it. Ordering, continuation joins, Send's trailing Return, and Paste Last
 behave as for a paste. Typing stops between characters when another app comes
@@ -2881,6 +2954,9 @@ The X11 grab and the hooks' suppression have no automated end-to-end check.
 ```ts
 Record -> Release -> Transcribing/processing/paste -> Finished // dictate.feedback
   HUD + tones distinguish capture from pending work          // never take focus
+  HUD on its edge -> past any meeting capsule or Annotate surface there, 8 pt clear
+     (overlay dock, ranks last; in the bar or notch it comes out under the bar
+      first; beside the pointer it is on no edge) // capture.md#overlay-dock
   Pending processing/paste -> Still unfinished, not recording
   Shortcut press -> Start tone ~50 ms later                  // dictate.start-tone
      -> Chord within 40 ms (e.g. Option-Command-I) -> Silent
@@ -3178,9 +3254,17 @@ the pump (`rune_hud::rehome`, `rune_hud::macos`):
 
 - While the HUD is shown, each pump turn checks whether the panel is on the
   active Space. When a Space switch or a full-screen exit left it behind, Hex
-  orders the panel out, clears the mask, sets the mask Rune intends (never the
-  panel's read-back), and orders it back in. That reorders the panel but leaves
-  Rune's presence state and alpha alone. The window server applies that
+  orders the panel out, orders it back in with `MoveToActiveSpace` in place of
+  `CanJoinAllSpaces` (the rest of Rune's mask kept), and then writes the mask
+  Rune intends (never the panel's read-back) directly, with no clear first:
+  the mask differs from the pulled one, so AppKit applies the write, and a
+  clear would leave the shown panel without `FullScreenAuxiliary` for a
+  moment. The re-home reorders the panel but leaves Rune's presence state and
+  alpha alone. Clearing and re-setting the intended mask alone, as Hex did
+  before, did not move a panel stranded on another application's full-screen
+  Space while Hex was a Regular (Dock) app, for example with Settings open in
+  its own full-screen Space: every attempt failed until the person went back
+  to that Space (#2875). The window server applies that
   asynchronously, so an attempt counts only once a later tick confirms it:
   seen on the active Space, it took; still elsewhere after its wait, it failed,
   and that tick tries again. The waits double from 150 ms to at most 3 s
@@ -3200,8 +3284,9 @@ the pump (`rune_hud::rehome`, `rune_hud::macos`):
   for it.
 
 The live-text plate beside the HUD is a separate panel and does not get this
-repair yet. Not yet observed on hardware; only the macOS compile and the pure
-`rune_hud::rehome` unit tests are checked.
+repair yet. Not yet observed on hardware, including the `MoveToActiveSpace`
+pull from #2875; only the macOS compile and the pure `rune_hud::rehome` unit
+tests are checked.
 
 At the top position the HUD sits 6 pt below the menu bar (`rune_hud::hud_placement::TOP_OFFSET`), or below the
 notch (`NSScreen.safeAreaInsets`) where a fullscreen Space hides the menu bar

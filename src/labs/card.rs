@@ -33,6 +33,7 @@ impl Feature {
             Self::FillerWords => "Remove filler words",
             Self::CleanUpWithAppleIntelligence => "Clean up with Apple Intelligence",
             Self::NeutralVoice => "Neutral voice",
+            Self::CleanupTagger => "Clean up what I say",
             Self::SecondDictationShortcut => "Second dictation shortcut",
             Self::TerminalPasteShortcut => "Terminal paste shortcut",
             Self::SmartSpacing => "Smart spacing",
@@ -95,7 +96,6 @@ impl Feature {
             Self::HudHeight => "HUD height",
             Self::IndicatorFollowsMouse => "Indicator follows mouse",
             Self::VoiceIsolation => "Voice isolation",
-            Self::DictateWhileAnnotating => "Dictate while annotating",
             Self::StopAnyCallRecording => "Stop every call recording when the call ends",
             Self::ClipboardPhrase => "Clipboard phrase",
             Self::MeetingMicrophoneMute => "Mute the microphone while recording",
@@ -169,6 +169,9 @@ impl Feature {
             }
             Self::NeutralVoice => {
                 "Rewrite dictations in chosen modes into plain, neutral wording on this Mac, so your writing style doesn't show"
+            }
+            Self::CleanupTagger => {
+                "Remove ums, repeats, and things you correct out loud from English dictations, with a small model on this Mac that never adds a word"
             }
             Self::SecondDictationShortcut => {
                 "Another shortcut that dictates like the main one, such as a key on an external keyboard"
@@ -358,9 +361,6 @@ impl Feature {
             }
             Self::VoiceIsolation => {
                 "Record dictation through Apple's voice processing so Mic Mode can turn on Voice Isolation and cut background noise."
-            }
-            Self::DictateWhileAnnotating => {
-                "Dictate while a capture records: the text pastes as usual, and the capture keeps going"
             }
             Self::StopAnyCallRecording if !cfg!(target_os = "macos") => {
                 "Also stop an offered or by-hand call recording 30 s after its call app leaves the microphone, even with Stop when the call ends off"

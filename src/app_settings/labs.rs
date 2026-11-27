@@ -100,7 +100,7 @@ impl AppearanceTheme {
     }
 }
 
-/// The `labs` switches (`crate::labs`), each off by default; older Labs features keep their own keys, and retired switches (`labs.enabled`, `labs.collapsible_meeting_sections`, `labs.meeting_platform_icons`, `labs.transcribe_files`, `labs.restore_shortcut_default`, `labs.yearly_stats`, and the graduated meeting labs) are ignored.
+/// The `labs` switches (`crate::labs`), each off by default; older Labs features keep their own keys, and retired switches (`labs.enabled`, `labs.collapsible_meeting_sections`, `labs.meeting_platform_icons`, `labs.transcribe_files`, `labs.restore_shortcut_default`, `labs.yearly_stats`, `labs.dictate_while_annotating`, and the graduated meeting labs) are ignored.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct LabsSettings {
@@ -154,6 +154,11 @@ pub struct LabsSettings {
     /// wording on this Mac instead of the OpenCode rewrite and the cleanup
     /// (macOS).
     pub neutral_voice: bool,
+    /// Ums, repeated words, false starts, and spoken corrections leave an
+    /// English dictation: Hex's own tagger proposes the words to remove, on
+    /// this Mac's CPU, and a guard admits them. It only removes words (macOS,
+    /// Labs › Clean up what I say).
+    pub cleanup_tagger: bool,
     /// `second_dictation_hotkey` dictates like the dictation shortcut (issue 627).
     pub second_dictation_shortcut: bool,
     /// Up to four more dictation shortcuts, each with its own activation
@@ -311,9 +316,6 @@ pub struct LabsSettings {
     /// coding agents' own folders and, on macOS, links `hex` onto PATH
     /// (Labs › Install agent skill from Annotate).
     pub annotate_agent_install: bool,
-    /// While an Annotate capture records, the dictation shortcut dictates
-    /// as it always does, and the capture keeps recording.
-    pub dictate_while_annotating: bool,
     /// The local API's `process=global` returns transcripts after Global
     /// mode's output processing.
     pub api_processing: bool,
@@ -533,6 +535,7 @@ impl Default for LabsSettings {
             filler_words: false,
             clean_up_with_apple_intelligence: false,
             neutral_voice: false,
+            cleanup_tagger: false,
             second_dictation_shortcut: false,
             more_dictation_shortcuts: false,
             terminal_paste_shortcut: false,
@@ -580,7 +583,6 @@ impl Default for LabsSettings {
             vocabulary_menu: false,
             annotate_agent_tools: false,
             annotate_agent_install: false,
-            dictate_while_annotating: false,
             api_processing: false,
             api_timestamps: false,
             speakers_only: false,

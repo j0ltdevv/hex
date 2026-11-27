@@ -163,6 +163,9 @@ final class DictationController {
     var languageNotice: String?
     /// The language to offer (BCP 47) when the one chosen can't be dictated here yet.
     var languageOffer: String?
+    /// What Home says beside the offer's Use <language> button
+    /// (`SpeechModelUnavailable.lineBesideOffer`).
+    var languageOfferLine: String?
     private let languageSettings: LanguageSettings
     var modelPreparation = ModelPreparationProgress(
         fractionCompleted: 0,
@@ -317,6 +320,12 @@ final class DictationController {
         let oldPhase = phase
         fixturePhase = fixture
         didTransitionPhase(from: oldPhase)
+    }
+
+    /// Snapshot scenes: the dictation language the fixture stored, without preparing a model
+    /// for it (Settings › Dictation would otherwise prepare one as it appears).
+    func applyFixtureDictationLanguage() {
+        dictationLanguage = languageSettings.dictationLanguage
     }
 
     func setWarmSession(_ newSession: Session, remaining explicitRemaining: TimeInterval? = nil) {
