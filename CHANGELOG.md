@@ -1,6 +1,6 @@
 # Fork changelog
 
-This file records changes made in `j0ltdevv/hex` on top of upstream Hex. It is
+This file records changes made in `j0ltdevv/hex-groq` on top of upstream Hex. It is
 not an upstream release history and does not imply a published binary.
 
 ## Unreleased

@@ -16,7 +16,7 @@ the HEX desktop app. This package alone is not yet a turnkey native distribution
 ## Fork status
 
 This SDK README describes the library as used with the unofficial, source-only
-[j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. The fork's
+[j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq) fork. The fork's
 `hex service --embedded` helper is **local-only**: Groq is never used by the
 SDK or its helper, even when dictation uses Groq elsewhere. The fork publishes
 no packaged helper; supply the path to a binary built from this checkout, for

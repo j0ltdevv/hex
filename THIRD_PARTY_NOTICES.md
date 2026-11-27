@@ -4,7 +4,7 @@ Hex's own source is covered by the root `LICENSE`. The following notices cover
 vendored icon assets and the speech models Hex downloads under their own
 licences. Dependencies retain their respective upstream licenses.
 
-This repository is the unofficial `j0ltdevv/hex` fork of Hex. The upstream
+This repository is the unofficial `j0ltdevv/hex-groq` fork of Hex. The upstream
 copyright and licence remain intact; fork modifications are covered by the
 root `LICENSE`.
 

@@ -39,7 +39,7 @@ restart.
 The Settings card reads **Enabled** when the shortcut works system-wide in every
 app and **Disabled** when it does nothing.
 
-> **Fork status:** this is the unofficial [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. It publishes no binaries or signed updates. The installer, signed updater, and release-service links in sections marked **upstream** describe upstream Hex and do not install this fork. Build this checkout from source to get the Groq provider; Local remains the default and Groq is opt-in for dictation only. No Windows native run of this fork has been verified.
+> **Fork status:** this is the unofficial [j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq) fork. It publishes no binaries or signed updates. The installer, signed updater, and release-service links in sections marked **upstream** describe upstream Hex and do not install this fork. Build this checkout from source to get the Groq provider; Local remains the default and Groq is opt-in for dictation only. No Windows native run of this fork has been verified.
 
 ## Upstream installer (not provided by this fork)
 
@@ -135,7 +135,7 @@ whole clip. CPU devices (including ARM64) always use the whole-clip path. Set
 also set `TRANSCRIBE_CMAKE_ARGS=-DGGML_NATIVE=OFF`; without it ggml tunes its
 CPU kernels to the build machine and the binary can crash on older CPUs.
 
-For this fork, clone `https://github.com/j0ltdevv/hex.git` before setup; the
+For this fork, clone `https://github.com/j0ltdevv/hex-groq.git` before setup; the
 checked-in `.cargo/config.toml` forces `HEX_LOCAL_BUILD=1`, disabling all
 update checks, downloads, and installs in source builds.
 
@@ -169,7 +169,7 @@ dependencies, and runs `cargo check --all-targets`.
 Clone this fork and use the prerequisites above (`.\scripts\setup-windows.ps1`):
 
 ```powershell
-git clone https://github.com/j0ltdevv/hex.git
+git clone https://github.com/j0ltdevv/hex-groq.git
 cd hex
 cargo build --release --bin hex
 .\target\release\hex.exe --version

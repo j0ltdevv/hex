@@ -25,7 +25,7 @@ code, and can be captured like any other (`docs/windows.md`).
 The read-only `hex history` and `hex meetings list|show|chapters|search` commands, and
 `hex mcp`, read files rather than the running Hex; see `docs/transcript-cli.md`.
 
-> **Fork status:** this CLI documents the unofficial, source-only [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. Build from source; upstream installers and signed updates do not install this fork. Fork source builds force `HEX_LOCAL_BUILD=1`, so update commands report no update and cannot switch channels. Groq is opt-in for dictation only; Local stays the default.
+> **Fork status:** this CLI documents the unofficial, source-only [j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq) fork. Build from source; upstream installers and signed updates do not install this fork. Fork source builds force `HEX_LOCAL_BUILD=1`, so update commands report no update and cannot switch channels. Groq is opt-in for dictation only; Local stays the default.
 
 ## Commands
 

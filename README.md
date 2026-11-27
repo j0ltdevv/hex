@@ -4,7 +4,7 @@ Hex Groq Edition is an unofficial fork of [Hex](https://github.com/anomalyco/hex
 It keeps the native local dictation experience and adds one **opt-in cloud
 provider: Groq**. Local remains the default and the fallback.
 
-Maintained at [j0ltdevv/hex](https://github.com/j0ltdevv/hex). This project is
+Maintained at [j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq). This project is
 not affiliated with, endorsed by, or supported by Anomaly Innovations or Groq.
 Hex and Groq trademarks belong to their respective owners.
 
@@ -50,7 +50,7 @@ or commit. See [`docs/GROQ.md`](docs/GROQ.md) for the full contract.
 ### 1. Build from source
 
 ```sh
-git clone https://github.com/j0ltdevv/hex.git
+git clone https://github.com/j0ltdevv/hex-groq.git
 cd hex
 cargo build --release --bin hex
 ```
@@ -171,7 +171,7 @@ intended cadence is weekly and before any future fork release. See:
 ## Contributing and support
 
 Issues and diagnoses are welcome in this fork:
-[open an issue](https://github.com/j0ltdevv/hex/issues). Never include a real key,
+[open an issue](https://github.com/j0ltdevv/hex-groq/issues). Never include a real key,
 private transcript, or unredacted log. See [`SECURITY.md`](SECURITY.md) and
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

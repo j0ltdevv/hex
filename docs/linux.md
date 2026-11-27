@@ -32,7 +32,7 @@ elsewhere (KDE, GNOME). Shortcuts are general: the desktop's GlobalShortcuts por
 your desktop's own keybindings running `hex` commands (see
 [Shortcuts](#shortcuts)).
 
-> **Fork status:** this is the unofficial [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. It publishes no binaries. Building from this source checkout is the supported install path; the published-build, installer, and updater sections below describe **upstream Hex** and do not install this fork.
+> **Fork status:** this is the unofficial [j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq) fork. It publishes no binaries. Building from this source checkout is the supported install path; the published-build, installer, and updater sections below describe **upstream Hex** and do not install this fork.
 >
 > Every source build sets `HEX_LOCAL_BUILD=1` (forced by `.cargo/config.toml`), so no fork build checks for, downloads, or installs updates. Groq is opt-in for dictation only; Local stays the default.
 
@@ -372,7 +372,7 @@ rustup default stable
 Build and install Hex as your desktop user:
 
 ```sh
-git clone https://github.com/j0ltdevv/hex.git
+git clone https://github.com/j0ltdevv/hex-groq.git
 cd hex
 ./scripts/install-linux.sh
 ~/.local/bin/hex model install

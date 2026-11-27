@@ -1,6 +1,6 @@
 # Project documentation
 
-This is the unofficial [`j0ltdevv/hex`](https://github.com/j0ltdevv/hex) fork.
+This is the unofficial [`j0ltdevv/hex-groq`](https://github.com/j0ltdevv/hex-groq) fork.
 It builds from source, keeps Hex local by default, and adds an opt-in Groq
 dictation provider. Upstream plans and release-service documents describe the
 base project, not a fork binary distribution.
@@ -86,9 +86,9 @@ contract, the fork documents above take precedence for this repository.
 
 ## Support
 
-- Issues: <https://github.com/j0ltdevv/hex/issues>
+- Issues: <https://github.com/j0ltdevv/hex-groq/issues>
 - Private vulnerability reports:
-  <https://github.com/j0ltdevv/hex/security/advisories/new>
+  <https://github.com/j0ltdevv/hex-groq/security/advisories/new>
 - Security guidance: [`../SECURITY.md`](../SECURITY.md)
 - Contribution workflow and checks: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
 

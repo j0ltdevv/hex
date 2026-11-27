@@ -1,7 +1,7 @@
 # Security
 
 Report vulnerabilities through private vulnerability reporting on this fork:
-<https://github.com/j0ltdevv/hex/security/advisories/new>
+<https://github.com/j0ltdevv/hex-groq/security/advisories/new>
 
 Do not open a public issue for an undisclosed vulnerability. This is an
 unofficial fork; Anomaly Innovations does not support or triage it.

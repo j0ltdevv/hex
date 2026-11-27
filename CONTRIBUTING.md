@@ -1,8 +1,8 @@
 # Contributing to this fork
 
-This is the unofficial [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork.
+This is the unofficial [j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq) fork.
 Issues, diagnoses, documentation fixes, and proposed code changes are welcome
-at <https://github.com/j0ltdevv/hex/issues>. They go to this fork's maintainers,
+at <https://github.com/j0ltdevv/hex-groq/issues>. They go to this fork's maintainers,
 not to upstream Anomaly.
 
 ## Before you start
