@@ -1,163 +1,124 @@
-# Hex — j0ltdevv fork (unofficial)
+# Hex Groq Edition — unofficial fork
 
-<a href="https://opencode.ai"><picture><source media="(prefers-color-scheme: dark)" srcset="https://opencode.ai/brand/badges/opencode-built-with-g-dark-20.svg"><img alt="Built with OpenCode" src="https://opencode.ai/brand/badges/opencode-built-with-g-light-20.svg" height="20" /></picture></a>
+Hex Groq Edition is an unofficial fork of [Hex](https://github.com/anomalyco/hex).
+It keeps the native local dictation experience and adds one **opt-in cloud
+provider: Groq**. Local remains the default and the fallback.
 
-This is an **unofficial fork** of [Hex](https://github.com/anomalyco/hex),
-maintained at [j0ltdevv/hex](https://github.com/j0ltdevv/hex). It is not
-affiliated with, endorsed by, or supported by Anomaly Innovations. The upstream
-project and its trademarks belong to their owners; Hex is MIT licensed.
+Maintained at [j0ltdevv/hex](https://github.com/j0ltdevv/hex). This project is
+not affiliated with, endorsed by, or supported by Anomaly Innovations or Groq.
+Hex and Groq trademarks belong to their respective owners.
 
-Hex is native voice dictation for macOS, Windows, and Linux. Hold a key, speak,
-and it pastes. This fork keeps the upstream Local path and adds one **opt-in**
-cloud speech provider: **Groq**. Local remains the default and the fallback.
+## Status
 
-## Project status
-
-| Area | Status in this fork |
-| --- | --- |
-| Linux x86_64 source build | Built and tested |
-| Linux Groq dictation | Observed end to end: shortcut → Groq HTTP 200 → paste → History |
-| macOS | Upstream target; native fork behavior not verified here |
-| Windows x64 / ARM64 | Upstream targets; native fork behavior not verified here |
-| Meetings | macOS live workflow; not part of the Groq change |
-| Local API and TypeScript SDK | Local only; Groq is never used |
-| Binary distribution | Source-only; no signed fork binaries or update feed |
-| Upstream sync | Based on `anomalyco/hex` `f5819f4c`; see [`docs/UPSTREAM-SYNC.md`](docs/UPSTREAM-SYNC.md) |
+Linux x86_64 is the reference platform for this fork. macOS and Windows remain
+upstream source targets, but their native behavior has not been verified here.
+The fork is source-only and publishes no signed binaries or update feed.
 
 ## Screenshots
 
 <img src="docs/images/output.png" width="720" alt="Hex Output pane with ordered processing steps">
-
-<img src="tests/golden/rune-mac-settings-advanced-light.png" width="720" alt="Hex General settings with Local and Groq dictation provider">
+<img src="docs/images/hex-groq-settings.png" width="720" alt="Hex General settings with Local and Groq dictation provider">
 
 ## Privacy at a glance
 
 | Mode | What happens to dictation audio |
 | --- | --- |
-| **Local** (default) | Transcribed on your device. No Groq request, even if a key is saved. |
-| **Groq** with a usable key | The complete clip is sent to Groq once, on an off-worker request that runs beside the local transcription. The key is resolved when the capture is submitted; later key changes do not affect it. |
-| **Groq** without a usable key, after an error, empty result, or cancellation | The same clip is transcribed locally. Cancellation stops the cloud result from being pasted. |
-| **Meetings, the local API `/dictations`, and `hex transcribe`** | Local only. Groq is limited to dictation. |
-| **Usage records** | A bounded in-memory ring records provider, model, outcome, samples, and duration. No key, audio, prompt, language, transcript, or monetary cost; the provider used is logged. |
-| **Updates** | Source builds from this fork are marked local and never check for, download, or install an update, including an upstream Anomaly release. |
+| **Local** (default) | Transcribed on your device. No Groq request is made, even if a key is saved. |
+| **Groq** with a usable key | The complete clip is sent to Groq once. Local transcription still runs as the fallback. |
+| **Groq** without a usable key, after an error, or after cancellation | The same clip is transcribed locally. A cancelled cloud result is never pasted. |
+| **Meetings, the local API, and `hex transcribe`** | Local only. Groq is limited to interactive dictation. |
+| **Usage records** | A bounded in-memory ring stores provider, model, outcome, sample count, and duration. It stores no key, audio, prompt, transcript, language, or cost. |
+| **Updates** | Source builds are marked local and never download or install an upstream update. |
 
-Groq is a choice, not a side effect: installing or configuring the fork does not
-send audio anywhere. See [`docs/GROQ.md`](docs/GROQ.md) for key precedence,
-isolation, retry behavior, and evidence limits.
+Installing or configuring the fork does not send audio anywhere. Groq is used
+only after you explicitly select it. Never put a real key in an issue, screenshot,
+or commit. See [`docs/GROQ.md`](docs/GROQ.md) for the full contract.
 
 ## What it does
 
-- Hold the shortcut to dictate, or choose Tap/Toggle mode. On Hyprland you can
-  bind `hex dictation start` / `stop` as Lua hold-to-talk keys instead of relying
-  on the GlobalShortcuts portal ([Linux notes](docs/linux.md#shortcuts)).
-- Text lands at the cursor in the focused app. Paste Last uses Option-Shift-V on
-  macOS and Ctrl-Alt-V on Windows/Linux.
-- History keeps dictations searchable for seven days by default.
-- Output runs dictations through word replacements, built-in cleanups,
-  OpenCode rewrite, and ordered TypeScript transformations.
-- Vocabulary supplies names and jargon to supported speech models.
-- Annotate records the screen while you draw and talk on supported desktop
-  platforms.
-- The authenticated local API and [TypeScript SDK](sdk/typescript/README.md)
-  transcribe with the local model. The SDK currently requires an explicit
-  fork-built native helper.
-- Meetings follows the upstream platform support and is not widened by Groq.
+- Hold a shortcut, speak, and paste into the focused app; Tap and Toggle modes
+  are also available.
+- Keep searchable dictation history, ordered output transformations, vocabulary,
+  and custom speech models.
+- Record and annotate the screen while you draw and talk on supported desktops.
+- Run Meetings, the authenticated local API, and the TypeScript SDK on the local
+  transcription path.
+- Choose Local or Groq per dictation from the graphical Settings window.
 
-Speech models are cached on the device after first setup. Settings offers
-Parakeet, Cohere Transcribe, Whisper large-v3-turbo, Qwen3-ASR, SenseVoice,
-Nemotron, Granite, one-language models, and GGUF models of your own
-([your own models](docs/features/own-models.md)). Groq's two model choices apply
-only to the opt-in Groq provider.
+## Getting started
 
-## Quickstart: opt-in Groq
-
-### 1. Build or install from source
+### 1. Build from source
 
 ```sh
 git clone https://github.com/j0ltdevv/hex.git
 cd hex
 cargo build --release --bin hex
-./target/release/hex --version
 ```
 
 On Linux, `./scripts/install-linux.sh` builds and installs the same checkout into
-the user-local managed layout. See the platform table below for prerequisites.
+the user-local managed layout. Platform prerequisites are listed below.
 
-### 2. Start Hex
+### 2. Launch the app
 
 ```sh
-./target/release/hex model install
 ./target/release/hex start
-./target/release/hex status
 ```
 
-If you installed Hex on Linux, use `hex` instead of `./target/release/hex`.
+If you installed Hex on Linux, use `hex start` instead. This opens the graphical
+Hex app; you do not need to keep a terminal window open afterward.
 
-### 3. Choose Groq explicitly
+### 3. Finish onboarding in the window
 
-Local is already active. To opt in:
+The onboarding window installs the selected local speech model and requests the
+necessary desktop permissions. Local dictation works without a Groq account.
 
-```sh
-hex settings set speech_provider groq
-hex settings set groq_model whisper-large-v3
-hex settings get speech_provider
-hex settings get groq_model
-```
+### 4. Enable Groq in Settings
 
-The CLI talks to the running Hex, so run `hex start` first.
+1. Open **Settings → General → Advanced → Dictation**.
+2. Choose **Groq** as the dictation provider.
+3. Choose a Groq model.
+4. Paste your API key into the masked key field.
 
-### 4. Provide a key without committing it
+Return to **Local** from the same control at any time. The CLI is not required
+for normal GUI use.
 
-Use either:
-
-- the `GROQ_API_KEY` environment variable; or
-- an owner-only `<Hex data root>/groq.key` file; or
-- the masked Groq API key field in Settings.
-
-Resolution order is environment → `groq.key` → legacy saved setting. The CLI
-redacts `groq_api_key` and refuses to write it. Never paste a real key into an
-issue, test, screenshot, or commit.
-
-To return to the unchanged local path:
-
-```sh
-hex settings set speech_provider local
-```
-
-See [`docs/GROQ.md`](docs/GROQ.md) for the full provider contract.
+For automation or headless setups, the key can also come from `GROQ_API_KEY` or
+an owner-only `<Hex data root>/groq.key` file. Resolution order is environment →
+`groq.key` → legacy saved setting. The CLI redacts `groq_api_key` and refuses to
+write it.
 
 ## Build prerequisites
 
 | Platform | Requirements | Supported source path |
 | --- | --- | --- |
-| **Linux x86_64 / ARM64** | Rust stable, C/C++ toolchain, CMake, ALSA/PipeWire compatibility, OpenBLAS, X11/Wayland development libraries, and a real Vulkan driver (not only the loader). Arch package list: [`docs/linux.md`](docs/linux.md#install-from-source). | `./scripts/install-linux.sh` or `cargo build --release --bin hex` |
+| **Linux x86_64 / ARM64** | Rust stable, C/C++ toolchain, CMake, ALSA/PipeWire compatibility, OpenBLAS, X11/Wayland development libraries, and a real Vulkan driver. Arch package list: [`docs/linux.md`](docs/linux.md#install-from-source). | `./scripts/install-linux.sh` or `cargo build --release --bin hex` |
 | **Windows x64** | Windows 10/11, Visual Studio C++ Build Tools, CMake, stable MSVC Rust, Vulkan SDK. | `powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows.ps1`, then `cargo build --release --bin hex` |
 | **Windows ARM64** | Visual Studio clang-cl and Ninja; follow the ARM64 flags in [`docs/windows.md`](docs/windows.md#requirements-for-source-builds). | Same setup, then the documented ARM64 build command |
-| **macOS** | macOS 15+, Xcode 26 / command-line tools, stable Rust, and the native dependencies listed in [`docs/macos.md`](docs/macos.md). | `scripts/build-app.sh`; use `HEX_RELEASE_UNSIGNED=1` for an unsigned local bundle. Upstream Developer ID/notarization tooling is not a fork release path. |
+| **macOS** | macOS 15+, Xcode 26 / command-line tools, stable Rust, and the native dependencies listed in [`docs/macos.md`](docs/macos.md). | `scripts/build-app.sh`; use `HEX_RELEASE_UNSIGNED=1` for an unsigned local bundle. Upstream signing/notarization tooling is not a fork release path. |
 
-`.cargo/config.toml` sets `HEX_LOCAL_BUILD=1` for every build in this fork. The
-app reports itself as a local source build and never installs an upstream update.
-When portability matters, build with `-DGGML_NATIVE=OFF`; the Windows guide and
-Linux release script show the supported flags.
+`.cargo/config.toml` forces `HEX_LOCAL_BUILD=1`, so the app identifies itself as a
+local source build and never installs an upstream update. When portability
+matters, build with `-DGGML_NATIVE=OFF`; the Windows guide and Linux release
+script show the supported flags.
 
-## First run and useful commands
+## Optional command-line controls
+
+Hex is a graphical app. The CLI exists for automation, Hyprland bindings,
+diagnostics, local-file transcription, and SDK integration:
 
 ```sh
-hex model install
-hex start
 hex status
 hex window show
 hex settings list
 hex logs --process -f
-hex dictation toggle
 hex transcribe meeting.m4a
 ```
 
-- `hex model install` downloads and verifies the selected local speech model.
-- `hex start` is the only command that launches Hex; other controls talk to the
-  running instance.
+- `hex start` launches the app; the other controls talk to the running instance.
 - `hex logs --process -f` follows Rust/native diagnostics in `process.log`.
-- `hex transcribe` is always local, even when the dictation provider is Groq.
+- `hex transcribe` is always local, even when dictation uses Groq.
+- On Hyprland, `hex dictation start` / `stop` can be bound in Lua when the
+  GlobalShortcuts portal is unavailable.
 - Full CLI contract: [`docs/cli.md`](docs/cli.md).
 
 ## Architecture
@@ -165,54 +126,31 @@ hex transcribe meeting.m4a
 Hex is one native Rust process per user and data root:
 
 - **Capture and platform hosts** own the microphone, shortcuts, paste, HUD, and
-  OS integration (`src/linux`, `src/windows`, `src/parakeet.rs`).
-- **`src/transcription`** owns the local model, streaming, deadlines, ordering,
-  and fallback.
-- **`src/groq*`** is the fork-only additive provider: key resolution, multipart,
-  FLAC/WAV encoding, cancellation, retry, and secret-safe usage records.
+  OS integration.
+- **`src/transcription`** owns local models, streaming, deadlines, ordering, and
+  fallback.
+- **`src/groq*`** is the fork-only provider: key resolution, multipart encoding,
+  cancellation, retry, and secret-safe usage records.
 - **`src/control`** exposes the versioned control CLI and settings registry.
-- **`src/rune_ui`** is the shared Rune window on macOS, Windows, and Linux.
+- **`src/rune_ui`** is the shared graphical window on macOS, Windows, and Linux.
 - **`src/local_api`** serves authenticated loopback transcription and dictation
   control; it stays local in this fork.
 
-The implementation authority is [`AGENTS.md`](AGENTS.md). Fork-specific deltas
-and conflict hotspots are documented in [`docs/GROQ.md`](docs/GROQ.md) and
-[`docs/UPSTREAM-SYNC.md`](docs/UPSTREAM-SYNC.md).
-
-## Tests
-
-Focused provider and integration checks:
-
-```sh
-cargo fmt --all --check
-python3 scripts/code-shape.py --check
-scripts/check groq::tests control::settings transcription::engine::tests linux::dictation desktop::i18n
-```
-
-UI and golden checks:
-
-```sh
-scripts/check rune_ui
-VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
-  HEX_UPDATE_GOLDENS=1 cargo test --locked --bin hex rune_ui::tests::panes::platform_goldens
-```
-
-The live Groq smoke is opt-in and requires a real key plus a 16 kHz mono WAV. It
-is not part of the default suite; see [`docs/GROQ.md`](docs/GROQ.md#verification-boundary).
+Fork-specific behavior is documented in [`docs/GROQ.md`](docs/GROQ.md),
+[`docs/FORK.md`](docs/FORK.md), and [`docs/UPSTREAM-SYNC.md`](docs/UPSTREAM-SYNC.md).
 
 ## Known limits
 
-- This fork publishes **no binaries, installers, signed releases, or update feed**.
-- Native macOS and Windows behavior is not verified in this fork.
-- Groq is only for complete-clip dictation. Meetings, `/dictations`, the local
-  transcription API, and `hex transcribe` remain local.
-- The local model still runs in parallel. Groq can improve the final transcript,
-  but it is not a CPU/RAM offload or a model-free installation.
-- The usage ring is diagnostic, not billing or invoice data.
-- Queue-full, cancellation timing, fallback latency, GPU execution, and billed
-  cost are not established by the offline suite.
-- Translations have not had a native-speaker review.
-- The TypeScript SDK still needs an explicitly supplied native helper.
+| Limit | Why it remains |
+| --- | --- |
+| **No binaries, installers, signed releases, or update feed** | This fork has no signing/notarization credentials or release distribution pipeline. Local mode also prevents a source build from silently replacing itself with an upstream binary. |
+| **macOS and Windows behavior is not verified here** | Only Linux x86_64 has physical end-to-end proof in this fork. There is no native macOS/Windows hardware and release environment behind these claims. |
+| **Groq is limited to complete-clip dictation** | This is deliberate scope control. Meetings, `/dictations`, the local transcription API, and `hex transcribe` keep their local-only privacy contract. |
+| **The local model still runs in parallel** | The fallback and cancellation design keeps the local path warm and available. Groq improves the final result but is not a CPU/RAM offload or a model-free installation. |
+| **The usage ring is diagnostic, not billing data** | It is a bounded in-memory metadata ring with no cost field and no persisted transcripts. Groq billing APIs are not integrated. |
+| **Queue pressure, cancellation timing, fallback latency, GPU behavior, and real cost are not established** | There is no production telemetry, long-running load evidence, or broad hardware matrix. Loopback checks cannot prove those real-world properties. |
+| **Translations have not had a native-speaker review** | Automated coverage verifies that keys exist, not that wording is natural or culturally correct. No linguistic review has been completed yet. |
+| **The TypeScript SDK needs an explicitly supplied native helper** | The transcription engine is native Rust/C++ and this fork does not package a standalone helper for SDK users. |
 
 ## Releases and upstream sync
 
@@ -222,10 +160,9 @@ channel yet.
 
 The fork tracks `anomalyco/hex` and re-applies a small behavioral delta. The
 current upstream baseline is `f5819f4c`. For the 2026-11-27 sync, the Rune
-dependency pin intentionally remains `9d4b4636f1f7e6d172053a0b6469a334c0bfc227`
-by explicit agreement; the usual Rune dev-head bump is deferred to a separate
-dependency-update round. The intended cadence is weekly and before any future
-fork release. See:
+dependency pin intentionally remains `9d4b4636` by explicit agreement; the usual
+Rune dev-head bump is deferred to a separate dependency-update round. The
+intended cadence is weekly and before any future fork release. See:
 
 - [`CHANGELOG.md`](CHANGELOG.md) for fork-specific changes;
 - [`docs/FORK.md`](docs/FORK.md) for identity, scope, and support policy;
