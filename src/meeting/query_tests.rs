@@ -623,6 +623,12 @@ fn pending_final_keeps_an_expired_draft_visible_even_in_a_warm_query_cache() {
     manifest.retention_applies = true;
     manifest.created_at_ms = 1;
     manifest.ended_at_ms = Some(2);
+    // A failed final pass is settled for recovery; only the explicit pending
+    // marker below keeps this expired draft readable. Otherwise a concurrent
+    // test's global "meetings enabled + model installed" state would keep any
+    // interrupted draft readable and make this isolation check flaky.
+    manifest.status = MeetingStatus::Interrupted;
+    manifest.error = Some("final pass failed".into());
     fs::write(path, serde_json::to_vec(&manifest).unwrap()).unwrap();
     let library = Library::new(&root);
     assert!(library.scan().unwrap().meetings.is_empty());

@@ -324,9 +324,18 @@ fn meeting_lock_reports_liveness_across_file_descriptors() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+static TEST_MEETING_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn finished_meeting(name: &str, title: &str) -> (PathBuf, PathBuf) {
-    let base = std::env::temp_dir().join(format!("hex-{name}-{}-{}", std::process::id(), now_ms()));
-    let directory = base.join("1760000000000-1");
+    // The write-claim set is process-local and keyed by meeting id. A fixed
+    // id made parallel tests steal each other's writer slot.
+    let id = format!(
+        "1760000000000-{}-{}",
+        std::process::id(),
+        TEST_MEETING_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let base = std::env::temp_dir().join(format!("hex-{name}-{id}"));
+    let directory = base.join(&id);
     fs::create_dir_all(&directory).unwrap();
     let export = base.join("2026-10-15 1418 Meeting.md");
     fs::write(
@@ -336,7 +345,7 @@ fn finished_meeting(name: &str, title: &str) -> (PathBuf, PathBuf) {
     .unwrap();
     let manifest: MeetingManifest = serde_json::from_value(serde_json::json!({
         "schema_version": 1,
-        "id": "1760000000000-1",
+        "id": id,
         "title": title,
         "status": "complete",
         "created_at_ms": 1_760_000_000_000_u64,
@@ -724,7 +733,7 @@ fn deleting_trashes_the_markdown_then_the_recording_and_refuses_while_recording(
         Ok(())
     })
     .unwrap();
-    assert_eq!(deleted.id, "1760000000000-1");
+    assert_eq!(deleted.id, directory.file_name().unwrap().to_string_lossy());
     assert_eq!(deleted.title, "Design sync");
     assert!(deleted.markdown);
     assert_eq!(trashed, [export.clone(), directory.clone()]);

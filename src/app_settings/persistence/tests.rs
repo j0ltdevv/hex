@@ -1035,7 +1035,7 @@ fn launch_publishes_the_saved_selection_before_the_worker_starts() {
     AppSettings::load_for_launch_at(Err(eyre!("settings path unavailable")));
     assert_eq!(
         crate::app_settings::transcription_selection().1,
-        TranscriptionSelection::default()
+        AppSettings::default().transcription
     );
 }
 
