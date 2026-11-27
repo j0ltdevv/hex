@@ -1,6 +1,6 @@
 # Project documentation
 
-This is the unofficial [`j0ltdevv/hex`](https://github.com/j0ltdevv/hex) fork.
+This is the unofficial [`j0ltdevv/hex-groq`](https://github.com/j0ltdevv/hex-groq) fork.
 It builds from source, keeps Hex local by default, and adds an opt-in Groq
 dictation provider. Upstream plans and release-service documents describe the
 base project, not a fork binary distribution.
@@ -8,7 +8,7 @@ base project, not a fork binary distribution.
 ## Start here
 
 - [`../README.md`](../README.md): fork identity, privacy, Groq quickstart,
-  platform prerequisites, tests, and known limits.
+  platform prerequisites, and known limits.
 - [`FORK.md`](FORK.md): what changes, what stays upstream, source-only policy,
   data locations, verification status, and support.
 - [`GROQ.md`](GROQ.md): provider behavior, key precedence, request bounds,
@@ -29,11 +29,9 @@ base project, not a fork binary distribution.
 - [`nix.md`](nix.md): Nix packaging for Linux, development, and per-user autostart.
 - [`cli.md`](cli.md): the `hex` control CLI, settings, dictation commands, logs,
   and wire protocol. Fork source builds cannot check or install updates.
-- [`../ios/README.md`](../ios/README.md): build and test the iOS prototype.
-- [`../android/README.md`](../android/README.md): build and test Hex Mobile on Android.
-- [`../sdk/typescript/README.md`](../sdk/typescript/README.md): use the public
-  TypeScript transcription SDK with an explicitly supplied native helper. The
-  helper is local-only; Groq is never used by the SDK or local API.
+- [`../sdk/typescript/README.md`](../sdk/typescript/README.md): use the
+  TypeScript transcription SDK and package its local native helper. The helper
+  is local-only; Groq is never used by the SDK or local API.
 - [`../site/public/docs/transforms.md`](../site/public/docs/transforms.md):
   TypeScript transformation API (`~/.config/hex/hex.config.ts`).
 - [`../site/public/docs/admin.md`](../site/public/docs/admin.md): macOS
@@ -86,9 +84,9 @@ contract, the fork documents above take precedence for this repository.
 
 ## Support
 
-- Issues: <https://github.com/j0ltdevv/hex/issues>
+- Issues: <https://github.com/j0ltdevv/hex-groq/issues>
 - Private vulnerability reports:
-  <https://github.com/j0ltdevv/hex/security/advisories/new>
+  <https://github.com/j0ltdevv/hex-groq/security/advisories/new>
 - Security guidance: [`../SECURITY.md`](../SECURITY.md)
 - Contribution workflow and checks: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
 

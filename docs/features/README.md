@@ -4,7 +4,7 @@ What can the user do, how do they reach it, and what would prove it works?
 This maps existing behavior. [ROADMAP.md](../../ROADMAP.md) owns future work;
 [AGENTS.md](../../AGENTS.md) owns implementation invariants.
 
-> **Fork status:** this map documents the unofficial, source-only [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. It publishes no binaries or signed updates; upstream installers and release feeds install upstream Hex only. Every fork source build forces `HEX_LOCAL_BUILD=1` and never updates. The fork's Groq addition appears in the [Dictate map](#dictate) as `dictate.groq-cloud-fallback`, with details and an implementation map in [GROQ.md](../GROQ.md).
+> **Fork status:** this map documents the unofficial, source-only [j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq) fork. It publishes no binaries or signed updates; upstream installers and release feeds install upstream Hex only. Every fork source build forces `HEX_LOCAL_BUILD=1` and never updates. The fork's Groq addition appears in the [Dictate map](#dictate) as `dictate.groq-cloud-fallback`, with details and an implementation map in [GROQ.md](../GROQ.md).
 
 Initial upstream source baseline: September 1, 2026, `9e9da53aa9ed`. Public macOS release:
 [2.3.1](../releases/2.3.1.md), with custom-domain downloads, a GitHub DMG mirror,
@@ -98,7 +98,7 @@ The other capabilities stay here until they need their own verification recipe.
 
 ## Get Ready
 
-This fork publishes no binaries. Clone `https://github.com/j0ltdevv/hex.git`
+This fork publishes no binaries. Clone `https://github.com/j0ltdevv/hex-groq.git`
 and follow [Build from source](../../README.md#build-from-source) or the
 [Linux](../linux.md#install-from-source) /
 [Windows](../windows.md#build-and-run-this-fork-on-windows) guides. Source

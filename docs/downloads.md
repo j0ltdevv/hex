@@ -1,6 +1,6 @@
 # Download Hosting
 
-> **Fork status:** this document is an **upstream release-service reference** only. It describes Anomaly's hosts, installers, and signed update feeds; none of these paths download or install the unofficial [j0ltdevv/hex](https://github.com/j0ltdevv/hex) fork. This fork publishes no binaries or updates: clone `https://github.com/j0ltdevv/hex.git` and follow [Build from source](../README.md#build-from-source) instead. Everything below is retained for upstream/release-service context.
+> **Fork status:** this document is an **upstream release-service reference** only. It describes Anomaly's hosts, installers, and signed update feeds; none of these paths download or install the unofficial [j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq) fork. This fork publishes no binaries or updates: clone `https://github.com/j0ltdevv/hex-groq.git` and follow [Build from source](../README.md#build-from-source) instead. Everything below is retained for upstream/release-service context.
 
 ## Public Paths
 

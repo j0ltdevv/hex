@@ -1,6 +1,6 @@
 # Fork changelog
 
-This file records changes made in `j0ltdevv/hex` on top of upstream Hex. It is
+This file records changes made in `j0ltdevv/hex-groq` on top of upstream Hex. It is
 not an upstream release history and does not imply a published binary.
 
 ## Unreleased
@@ -8,12 +8,22 @@ not an upstream release history and does not imply a published binary.
 ### Documentation
 
 - Reworked the README around source-only installation, opt-in Groq setup,
-  platform prerequisites, architecture, tests, known limits, and support.
+  platform prerequisites, architecture, known limits, and support.
 - Added [`docs/FORK.md`](docs/FORK.md) and
   [`docs/UPSTREAM-SYNC.md`](docs/UPSTREAM-SYNC.md).
 - Labelled upstream installer, release-feed, and signed-update documentation as
   upstream-only.
 - Documented Groq settings in the CLI guide and clarified SDK/local-API scope.
+
+### SDK
+
+- Added local native-helper packaging and `HEX_SERVICE_BINARY` resolution for
+  the TypeScript SDK.
+
+### Performance
+
+- Recorded a headless routing benchmark on a remote Linux worker: 407 ms serial
+  versus 306 ms parallel under fake API latency.
 
 ## 2026-11-26 — Groq provider baseline
 

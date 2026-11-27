@@ -2,7 +2,7 @@
 
 ## Identity
 
-`j0ltdevv/hex` is an unofficial fork of [`anomalyco/hex`](https://github.com/anomalyco/hex).
+`j0ltdevv/hex-groq` is an unofficial fork of [`anomalyco/hex`](https://github.com/anomalyco/hex).
 It is maintained independently and is not affiliated with, endorsed by, or
 supported by Anomaly Innovations or Groq.
 
@@ -87,8 +87,8 @@ See [`README.md`](../README.md#known-limits) and
 
 ## Support
 
-- Issues: <https://github.com/j0ltdevv/hex/issues>
-- Private vulnerability reports: <https://github.com/j0ltdevv/hex/security/advisories/new>
+- Issues: <https://github.com/j0ltdevv/hex-groq/issues>
+- Private vulnerability reports: <https://github.com/j0ltdevv/hex-groq/security/advisories/new>
 - Security guidance: [`../SECURITY.md`](../SECURITY.md)
 - Contribution workflow: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
 

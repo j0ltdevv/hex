@@ -1,22 +1,34 @@
 # HEX Service for Apple Silicon
 
-> **Status:** Private, unpublished platform artifact for Apple silicon macOS.
-> This checkout does not contain `bin/hex-service`.
+> **Status:** private, local-packaging workspace. No `bin/hex-service` binary is
+> committed and this package is not published to npm.
 
-`@hex-ai/service-darwin-arm64` is a placeholder for the planned native dependency
-of `@kitlangton/hex`. The public client does not declare this package as a
-dependency. Its platform resolver recognizes this name, but consumers currently
-must supply an explicit helper command to `create()`.
+`@hex-ai/service-darwin-arm64` is the platform payload for
+`@kitlangton/hex`. When installed in a consuming app, the SDK finds
+`bin/hex-service` through this package's exported `package.json` and starts it
+as `hex-service service --embedded`, with no `command` option and no desktop
+app.
 
-The TypeScript release workflow does not build or insert `bin/hex-service`.
-The separate service-app scripts package the full desktop executable as
-`hex-service`; they do not produce a transcription-only npm payload. The service protocol lives in
-[`docs/specs/local-transcription-service.md`](../../docs/specs/local-transcription-service.md),
-and remaining standalone helper packaging is tracked in [`ROADMAP.md`](../../ROADMAP.md).
+From the fork checkout on arm64 macOS:
 
-The service-app packager requires an explicit `HEX_TEAM_ID` and a
-matching Developer ID Application signing identity, using the same validation
-as the desktop app. `prepare-service-app.sh` also requires an explicit
-`HEX_NOTARY_PROFILE`. The scripts do not assume a signing team or notarization
-profile. The embedded and packaged service smoke checks expect local API 2;
-passing identity guards alone does not validate a signed helper artifact.
+```sh
+cargo build --release --bin hex
+sdk/scripts/pack-helper.sh --binary target/release/hex
+```
+
+The script copies the built executable into `bin/hex-service` (gitignored) and
+writes a tarball to `sdk/dist/`. Install that tarball in the consuming app with
+`npm install /path/to/tarball.tgz`. The copy must be signed and notarized before
+distribution in a signed consumer app; building it does not establish a release
+pipeline or a download feed.
+
+Other platforms have no workspace package here. Build `hex` from this checkout
+and point `HEX_SERVICE_BINARY` at the executable, or pass `command` to
+`create()`.
+
+The service protocol lives in
+[`docs/specs/local-transcription-service.md`](../../docs/specs/local-transcription-service.md).
+The repository's service-app scripts package the full desktop executable and
+require explicit signing/notarization credentials (`HEX_TEAM_ID`,
+`HEX_NOTARY_PROFILE`); they do not produce this npm payload. Passing their
+identity guards alone does not validate a signed helper artifact.
