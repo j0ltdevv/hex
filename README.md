@@ -22,7 +22,7 @@ cloud speech provider: **Groq**. Local remains the default and the fallback.
 | Meetings | macOS live workflow; not part of the Groq change |
 | Local API and TypeScript SDK | Local only; Groq is never used |
 | Binary distribution | Source-only; no signed fork binaries or update feed |
-| Upstream sync | Based on `anomalyco/hex` `86fd7f1`; see [`docs/UPSTREAM-SYNC.md`](docs/UPSTREAM-SYNC.md) |
+| Upstream sync | Based on `anomalyco/hex` `f5819f4c`; see [`docs/UPSTREAM-SYNC.md`](docs/UPSTREAM-SYNC.md) |
 
 ## Screenshots
 
@@ -221,8 +221,11 @@ silently replace themselves with an Anomaly binary. There is no fork release
 channel yet.
 
 The fork tracks `anomalyco/hex` and re-applies a small behavioral delta. The
-current upstream baseline is `86fd7f1`. The intended cadence is weekly and before
-any future fork release. See:
+current upstream baseline is `f5819f4c`. For the 2026-11-27 sync, the Rune
+dependency pin intentionally remains `9d4b4636f1f7e6d172053a0b6469a334c0bfc227`
+by explicit agreement; the usual Rune dev-head bump is deferred to a separate
+dependency-update round. The intended cadence is weekly and before any future
+fork release. See:
 
 - [`CHANGELOG.md`](CHANGELOG.md) for fork-specific changes;
 - [`docs/FORK.md`](docs/FORK.md) for identity, scope, and support policy;
