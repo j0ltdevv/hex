@@ -2,7 +2,8 @@
 
 Hex Groq Edition is an unofficial fork of [Hex](https://github.com/anomalyco/hex).
 It keeps the native local dictation experience and adds one **opt-in cloud
-provider: Groq**. Local remains the default and the fallback.
+provider: Groq**. Groq is the only cloud speech provider in this fork. Local
+remains the default and the fallback.
 
 Maintained at [j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq). This project is
 not affiliated with, endorsed by, or supported by Anomaly Innovations or Groq.
@@ -26,8 +27,7 @@ The fork is source-only and publishes no signed binaries or update feed.
 | **Local** (default) | Transcribed on your device. No Groq request is made, even if a key is saved. |
 | **Groq** with a usable key | The complete clip is sent to Groq once. Local transcription still runs as the fallback. |
 | **Groq** without a usable key, after an error, or after cancellation | The same clip is transcribed locally. A cancelled cloud result is never pasted. |
-| **Meetings, the local API, and `hex transcribe`** | Local only. Groq is limited to interactive dictation. |
-| **Usage records** | A bounded in-memory ring stores provider, model, outcome, sample count, and duration. It stores no key, audio, prompt, transcript, language, or cost. |
+| **Meetings, the local API, and `hex transcribe`** | Local only. Groq is not used for these paths. |
 | **Updates** | Source builds are marked local and never download or install an upstream update. |
 
 Installing or configuring the fork does not send audio anywhere. Groq is used
@@ -145,12 +145,8 @@ Fork-specific behavior is documented in [`docs/GROQ.md`](docs/GROQ.md),
 | --- | --- |
 | **No binaries, installers, signed releases, or update feed** | This fork has no signing/notarization credentials or release distribution pipeline. Local mode also prevents a source build from silently replacing itself with an upstream binary. |
 | **macOS and Windows behavior is not verified here** | Only Linux x86_64 has physical end-to-end proof in this fork. There is no native macOS/Windows hardware and release environment behind these claims. |
-| **Groq is limited to complete-clip dictation** | This is deliberate scope control. Meetings, `/dictations`, the local transcription API, and `hex transcribe` keep their local-only privacy contract. |
 | **The local model still runs in parallel** | The fallback and cancellation design keeps the local path warm and available. Groq improves the final result but is not a CPU/RAM offload or a model-free installation. |
-| **The usage ring is diagnostic, not billing data** | It is a bounded in-memory metadata ring with no cost field and no persisted transcripts. Groq billing APIs are not integrated. |
-| **Queue pressure, cancellation timing, fallback latency, GPU behavior, and real cost are not established** | There is no production telemetry, long-running load evidence, or broad hardware matrix. Loopback checks cannot prove those real-world properties. |
-| **Translations have not had a native-speaker review** | Automated coverage verifies that keys exist, not that wording is natural or culturally correct. No linguistic review has been completed yet. |
-| **The TypeScript SDK needs an explicitly supplied native helper** | The transcription engine is native Rust/C++ and this fork does not package a standalone helper for SDK users. |
+| **Queue pressure, cancellation timing, fallback latency, GPU behavior, and real cost are not established** | A headless routing benchmark measured 407 ms → 306 ms (about 25% lower) on `compute-2` under fake API latency, but there is still no production telemetry, long-running load evidence, or broad hardware matrix. See [`docs/perf.md`](docs/perf.md#headless-routing-scan-linux). |
 
 ## Releases and upstream sync
 

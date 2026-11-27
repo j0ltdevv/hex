@@ -216,3 +216,32 @@ build answers the same way for a screen reader.
 strobe bench perf/interaction.bench.ts --base origin/dev --head .
 strobe bench perf/interaction.bench.ts --filter "history-*" --check   # untimed smoke run
 ```
+
+## Headless routing scan (Linux)
+
+The strobe cases above need a desktop session. For a quiet, headless check of
+the router's session scan, use the paired test in `crates/router` (described in
+`perf/annotate-routing.md`): 220 fake sessions, two global pages, one exact
+folder and one missing ID at 100 ms per fake read, one warmup plus seven
+measured pairs. It opens no device, service, or real user data.
+
+Measured on a remote Linux worker (4 vCPU, load average 0.02 when checked,
+7.2 GiB RAM available, 6.9 GiB disk free) at `efd9e8b2`, the remote HEAD of
+`sync/upstream-2026-11-27-latest`. The checkout was clean and detached at that
+commit. The test build reused the existing cache and took 13.3 s; the test ran
+in 5.72 s. The environment was cleared of the caller's variables, with only the
+paths and job limit needed by Cargo:
+
+```sh
+env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$HOME" \
+  CARGO_HOME="$HOME/.cargo" CARGO_TARGET_DIR="$PWD/target" \
+  CARGO_BUILD_JOBS=2 CARGO_NET_OFFLINE=true \
+  cargo test --locked -p scrawl-router --lib \
+  parallel_reads_keep_the_same_candidates_and_decisions -- --nocapture
+```
+
+`METRIC session_scan_before_ms=407 after_ms=306 before_range=407-407
+after_range=306-307`. The serial reference took 407 ms; the parallel reader
+took 306 ms, about 25% less on this host. One run, not a population estimate:
+it measures fake API latency and scheduling, not a live session or a Hex
+launch.

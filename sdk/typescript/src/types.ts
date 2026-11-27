@@ -161,7 +161,7 @@ export interface HexClient {
 export interface CreateOptions {
   /** Omit the model for the low-level host. */
   readonly model?: never
-  /** Required until bundled native helper packages are published. */
+  /** Optional when a local helper package or HEX_SERVICE_BINARY is available. */
   readonly command?: readonly [executable: string, ...arguments: readonly string[]]
   readonly cwd?: string
   readonly env?: Readonly<Record<string, string | undefined>>

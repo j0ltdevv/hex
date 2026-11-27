@@ -8,19 +8,46 @@ preparation and inference.
 The package is ESM-only and requires Node.js `>=20.3.0` or a compatible host
 runtime.
 
-**Distribution status:** a bundled native helper is not published yet. Embedded
-consumers must currently supply an explicit native command. The examples below
-use the HEX executable's `service --embedded` mode; users do not need to launch
-the HEX desktop app. This package alone is not yet a turnkey native distribution.
+**Distribution status:** this fork builds the native helper from source and
+packages it as a local npm tarball. No native helper is published to the npm
+registry, and no download feed exists. `create()` resolves an installed
+`@hex-ai/service-darwin-arm64` automatically, or the local executable named by
+`HEX_SERVICE_BINARY`; an explicit `command` always wins. The examples below use
+an explicit command so they work on every platform. No HEX desktop app is
+launched.
+
+### Package a local helper
+
+On arm64 macOS, from the fork checkout:
+
+```sh
+cargo build --release --bin hex
+sdk/scripts/pack-helper.sh --binary target/release/hex
+# in the consuming app:
+npm install /path/to/hex/sdk/dist/hex-ai-service-darwin-arm64-0.0.0.tgz
+```
+
+The script stages the built binary in `sdk/service-darwin-arm64/bin/`
+(gitignored) and packs only that workspace. Sign and notarize the binary before
+distributing it inside a consumer app. The SDK then starts `service --embedded`
+directly:
+
+```ts
+const transcriber = await Hex.create({ model: "parakeet_unified_en" })
+```
+
+On Windows or Linux, build `hex` from this checkout and either set
+`HEX_SERVICE_BINARY` to its absolute path or pass `command: [binary, "service",
+"--embedded"]` to `create()`.
 
 ## Fork status
 
 This SDK README describes the library as used with the unofficial, source-only
 [j0ltdevv/hex-groq](https://github.com/j0ltdevv/hex-groq) fork. The fork's
-`hex service --embedded` helper is **local-only**: Groq is never used by the
-SDK or its helper, even when dictation uses Groq elsewhere. The fork publishes
-no packaged helper; supply the path to a binary built from this checkout, for
-example `command: ["/path/to/hex-fork/target/release/hex", "service", "--embedded"]`.
+`hex service --embedded` helper uses local models: the SDK and its helper never
+call Groq, even when dictation uses Groq elsewhere. The fork publishes no
+packaged helper to npm; use the local tarball above or `HEX_SERVICE_BINARY`, for
+example `HEX_SERVICE_BINARY=/path/to/hex-fork/target/release/hex`.
 `@kitlangton/hex` 0.3.1 remains an upstream-published package, not a fork
 release.
 

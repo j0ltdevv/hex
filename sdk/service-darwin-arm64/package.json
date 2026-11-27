@@ -2,7 +2,7 @@
   "name": "@hex-ai/service-darwin-arm64",
   "version": "0.0.0",
   "private": true,
-  "description": "Signed native HEX transcription helper for Apple Silicon macOS",
+  "description": "Native HEX transcription helper for Apple Silicon macOS",
   "license": "MIT",
   "os": ["darwin"],
   "cpu": ["arm64"],
