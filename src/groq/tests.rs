@@ -79,9 +79,11 @@ fn provider_defaults_to_local_and_serde_metadata_stays_backward_compatible() {
 
 #[test]
 fn a_saved_key_does_not_turn_the_local_default_into_a_request() {
-    let mut settings = AppSettings::default();
-    settings.speech_provider = SpeechProvider::Local;
-    settings.groq_api_key = Some(GroqApiKey::from(TEST_KEY));
+    let mut settings = AppSettings {
+        speech_provider: SpeechProvider::Local,
+        groq_api_key: Some(GroqApiKey::from(TEST_KEY)),
+        ..Default::default()
+    };
 
     assert_eq!(provider_from(&settings), SpeechProvider::Local);
     assert!(resolve_key(None, None, Some(TEST_KEY), true).is_some());
@@ -94,9 +96,11 @@ fn a_saved_key_does_not_turn_the_local_default_into_a_request() {
 
 #[test]
 fn selecting_groq_without_any_key_stays_on_the_local_path() {
-    let mut settings = AppSettings::default();
-    settings.speech_provider = SpeechProvider::Groq;
-    settings.groq_api_key = None;
+    let mut settings = AppSettings {
+        speech_provider: SpeechProvider::Groq,
+        groq_api_key: None,
+        ..Default::default()
+    };
 
     assert_eq!(provider_from(&settings), SpeechProvider::Groq);
     assert_eq!(resolve_key(None, None, None, true), None);
@@ -293,8 +297,10 @@ fn wav_has_a_mono_16_khz_16_bit_riff_header_and_clamped_pcm() {
     assert_eq!(bytes.len(), 44 + SAMPLES.len() * 2);
 
     let pcm: Vec<i16> = bytes[44..]
-        .chunks_exact(2)
-        .map(|sample| i16::from_le_bytes(sample.try_into().unwrap()))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|sample| i16::from_le_bytes(*sample))
         .collect();
     assert_eq!(pcm, [0, 8191, -8192, 32767, -32768, 32767, -32768, 0, 0, 0]);
 }
@@ -578,7 +584,7 @@ fn settle_refuses_cloud_text_queued_before_cancellation() {
     let cancel = CancelToken::new();
     let pending = pending_with(Some(Ok("cloud".into())), cancel.clone(), false);
     cancel.cancel();
-    let settled = pending.settle("local", |text| Ok(text));
+    let settled = pending.settle("local", Ok);
     assert_eq!(settled.value, "local");
     assert!(!settled.cloud_used);
 }
@@ -624,7 +630,7 @@ fn a_failed_local_run_still_settles_an_already_started_cloud_job() {
     assert_eq!(settled.value, Err("local failed".to_owned()));
     assert!(!settled.cloud_used);
 
-    let settled = settle_local::<&str>(None, Err("local failed"), |text| Ok(text));
+    let settled = settle_local::<&str>(None, Err("local failed"), Ok);
     assert_eq!(settled.value, Err("local failed"));
     assert!(!settled.cloud_used);
 }
@@ -662,7 +668,7 @@ fn the_key_is_snapshotted_when_the_cloud_job_starts() {
     )
     .unwrap();
     assert!(pending.closing_mark_required());
-    assert_eq!(pending.settle("local", |text| Ok(text)).value, "local");
+    assert_eq!(pending.settle("local", Ok).value, "local");
 }
 
 #[test]
@@ -914,10 +920,10 @@ fn mock_server_impl(
                         .unwrap();
                     let (status, response) = &responses[requests.len().min(responses.len() - 1)];
                     requests.push(read_request(&mut stream, status, response));
-                    if requests.len() == 1 {
-                        if let Some(cancel) = &cancel_after_first {
-                            cancel.cancel();
-                        }
+                    if requests.len() == 1
+                        && let Some(cancel) = &cancel_after_first
+                    {
+                        cancel.cancel();
                     }
                     last = Instant::now();
                 }

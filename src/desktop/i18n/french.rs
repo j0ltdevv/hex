@@ -1508,7 +1508,7 @@ mod tests {
             .map(|(english, _)| *english)
             .filter(|english| {
                 let translated = french.get(*english).copied().or_else(|| {
-                    super::super::groq_side::translate(super::super::FRENCH_COLUMN, *english)
+                    super::super::groq_side::translate(super::super::FRENCH_COLUMN, english)
                 });
                 translated.is_none_or(|text| text.is_empty())
             })
